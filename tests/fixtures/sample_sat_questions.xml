@@ -1,0 +1,269 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<quiz>
+  <!-- Category 1: Reading and Writing Practice -->
+  <question type="category">
+    <category>
+      <text>$course$/top/SAT Reading and Writing</text>
+    </category>
+    <info format="html">
+      <text><![CDATA[Official-style Reading and Writing questions for mod_sat.]]></text>
+    </info>
+  </question>
+
+  <!-- RW Question 1: Craft and Structure (Words in Context) -->
+  <question type="multichoice">
+    <name>
+      <text>RW01 - Words in Context (Craft and Structure)</text>
+    </name>
+    <questiontext format="html">
+      <text><![CDATA[<p>The following text is adapted from a historical essay on urban architecture.</p>
+<p>In designing modern public transit hubs, urban planners must balance aesthetic grandeur with practical utility. While majestic vaulted ceilings and monumental stone facades can inspire civic pride, an overly opulent design can easily become an impediment to commuter efficiency. Consequently, many contemporary transit designers favor sleek, minimalistic layouts that deliberately prioritize streamlined passenger movement over decorative flourish.</p>
+<hr>
+<p>As used in the text, what does the word <strong>"impediment"</strong> most nearly mean?</p>]]></text>
+    </questiontext>
+    <generalfeedback format="html">
+      <text><![CDATA[<p><strong>Explanation:</strong> In context, an opulent design creates an obstacle or barrier to commuter efficiency. Thus, "obstacle" or "hindrance" is the correct meaning.</p>]]></text>
+    </generalfeedback>
+    <defaultgrade>1.0000000</defaultgrade>
+    <single>true</single>
+    <shuffleanswers>1</shuffleanswers>
+    <answernumbering>ABCD</answernumbering>
+    <answer fraction="100" format="html">
+      <text><![CDATA[Obstacle]]></text>
+      <feedback format="html"><text><![CDATA[Correct. An impediment is a hindrance or obstacle.]]></text></feedback>
+    </answer>
+    <answer fraction="0" format="html">
+      <text><![CDATA[Catalyst]]></text>
+      <feedback format="html"><text><![CDATA[Incorrect. A catalyst speeds up or initiates an action, whereas an impediment hinders it.]]></text></feedback>
+    </answer>
+    <answer fraction="0" format="html">
+      <text><![CDATA[Alternative]]></text>
+      <feedback format="html"><text><![CDATA[Incorrect. An alternative is another choice, not a hindrance.]]></text></feedback>
+    </answer>
+    <answer fraction="0" format="html">
+      <text><![CDATA[Prerequisite]]></text>
+      <feedback format="html"><text><![CDATA[Incorrect. A prerequisite is a required condition, not an obstruction.]]></text></feedback>
+    </answer>
+    <tags>
+      <tag><text>sat_domain:craft_structure</text></tag>
+      <tag><text>sat_skill:words_in_context</text></tag>
+      <tag><text>sat_difficulty:medium</text></tag>
+    </tags>
+  </question>
+
+  <!-- RW Question 2: Standard English Conventions (Boundaries) -->
+  <question type="multichoice">
+    <name>
+      <text>RW02 - Sentence Boundaries (Standard English)</text>
+    </name>
+    <questiontext format="html">
+      <text><![CDATA[<p>Biochemist Dr. Elena Rostova spent decades researching marine bioluminescence in deep-sea cephalopods. Her groundbreaking analysis of luciferase enzymes revealed that the organisms could regulate light emission through rapid cellular ion ______ the discovery transformed modern biomedical imaging techniques.</p>
+<hr>
+<p>Which choice completes the text so that it conforms to the conventions of Standard English?</p>]]></text>
+    </questiontext>
+    <generalfeedback format="html">
+      <text><![CDATA[<p><strong>Explanation:</strong> A semicolon or period is required to link two independent grammatical clauses without creating a comma splice or run-on sentence.</p>]]></text>
+    </generalfeedback>
+    <defaultgrade>1.0000000</defaultgrade>
+    <single>true</single>
+    <shuffleanswers>1</shuffleanswers>
+    <answernumbering>ABCD</answernumbering>
+    <answer fraction="100" format="html">
+      <text><![CDATA[transfers; subsequently,]]></text>
+      <feedback format="html"><text><![CDATA[Correct. The semicolon properly separates the two independent clauses, followed by a transition adverb.]]></text></feedback>
+    </answer>
+    <answer fraction="0" format="html">
+      <text><![CDATA[transfers, subsequently,]]></text>
+      <feedback format="html"><text><![CDATA[Incorrect. This creates a comma splice between two independent clauses.]]></text></feedback>
+    </answer>
+    <answer fraction="0" format="html">
+      <text><![CDATA[transfers subsequently]]></text>
+      <feedback format="html"><text><![CDATA[Incorrect. This creates a run-on sentence.]]></text></feedback>
+    </answer>
+    <answer fraction="0" format="html">
+      <text><![CDATA[transfers, and subsequently]]></text>
+      <feedback format="html"><text><![CDATA[Incorrect. The conjunction structure is awkward and non-standard here.]]></text></feedback>
+    </answer>
+    <tags>
+      <tag><text>sat_domain:standard_english</text></tag>
+      <tag><text>sat_skill:boundaries</text></tag>
+      <tag><text>sat_difficulty:hard</text></tag>
+    </tags>
+  </question>
+
+  <!-- Category 2: Math Practice -->
+  <question type="category">
+    <category>
+      <text>$course$/top/SAT Math</text>
+    </category>
+    <info format="html">
+      <text><![CDATA[Official-style Math questions for mod_sat.]]></text>
+    </info>
+  </question>
+
+  <!-- Math Question 1: Algebra (Linear Equations) MCQ -->
+  <question type="multichoice">
+    <name>
+      <text>MATH01 - Linear Equations in One Variable (Algebra)</text>
+    </name>
+    <questiontext format="html">
+      <text><![CDATA[<p>If \( 4(2x - 3) + 5 = 3(x + 5) - 2 \), what is the value of \( x \)?</p>]]></text>
+    </questiontext>
+    <generalfeedback format="html">
+      <text><![CDATA[<p><strong>Solution:</strong><br>
+Expand both sides:<br>
+\( 8x - 12 + 5 = 3x + 15 - 2 \)<br>
+\( 8x - 7 = 3x + 13 \)<br>
+Subtract \(3x\) from both sides:<br>
+\( 5x - 7 = 13 \)<br>
+Add 7:<br>
+\( 5x = 20 \Rightarrow x = 4 \).</p>]]></text>
+    </generalfeedback>
+    <defaultgrade>1.0000000</defaultgrade>
+    <single>true</single>
+    <shuffleanswers>1</shuffleanswers>
+    <answernumbering>ABCD</answernumbering>
+    <answer fraction="100" format="html">
+      <text><![CDATA[4]]></text>
+      <feedback format="html"><text><![CDATA[Correct. Solving the linear equation yields x = 4.]]></text></feedback>
+    </answer>
+    <answer fraction="0" format="html">
+      <text><![CDATA[3]]></text>
+      <feedback format="html"><text><![CDATA[Incorrect.]]></text></feedback>
+    </answer>
+    <answer fraction="0" format="html">
+      <text><![CDATA[5]]></text>
+      <feedback format="html"><text><![CDATA[Incorrect.]]></text></feedback>
+    </answer>
+    <answer fraction="0" format="html">
+      <text><![CDATA[6]]></text>
+      <feedback format="html"><text><![CDATA[Incorrect.]]></text></feedback>
+    </answer>
+    <tags>
+      <tag><text>sat_domain:algebra</text></tag>
+      <tag><text>sat_skill:linear_equations</text></tag>
+      <tag><text>sat_difficulty:easy</text></tag>
+    </tags>
+  </question>
+
+  <!-- Math Question 2: Advanced Math (Quadratic Functions) MCQ -->
+  <question type="multichoice">
+    <name>
+      <text>MATH02 - Quadratic Vertex Form (Advanced Math)</text>
+    </name>
+    <questiontext format="html">
+      <text><![CDATA[<p>The function \( f \) is defined by \( f(x) = (x - 4)^2 - 9 \). Which of the following equivalent forms of \( f(x) \) displays the x-intercepts of the graph of \( y = f(x) \) as constants or coefficients?</p>]]></text>
+    </questiontext>
+    <generalfeedback format="html">
+      <text><![CDATA[<p><strong>Solution:</strong><br>
+The factored form of a quadratic function displays the x-intercepts. Since \( f(x) = (x - 4)^2 - 3^2 \), using the difference of squares:<br>
+\( f(x) = ((x - 4) - 3)((x - 4) + 3) = (x - 7)(x - 1) \).<br>
+Thus, the x-intercepts are at \( x = 1 \) and \( x = 7 \).</p>]]></text>
+    </generalfeedback>
+    <defaultgrade>1.0000000</defaultgrade>
+    <single>true</single>
+    <shuffleanswers>1</shuffleanswers>
+    <answernumbering>ABCD</answernumbering>
+    <answer fraction="100" format="html">
+      <text><![CDATA[\( f(x) = (x - 7)(x - 1) \)]]></text>
+      <feedback format="html"><text><![CDATA[Correct. The factored form clearly displays the roots x = 7 and x = 1.]]></text></feedback>
+    </answer>
+    <answer fraction="0" format="html">
+      <text><![CDATA[\( f(x) = x^2 - 8x + 7 \)]]></text>
+      <feedback format="html"><text><![CDATA[Incorrect. Standard form displays the y-intercept, not the x-intercepts.]]></text></feedback>
+    </answer>
+    <answer fraction="0" format="html">
+      <text><![CDATA[\( f(x) = (x - 4)^2 - 9 \)]]></text>
+      <feedback format="html"><text><![CDATA[Incorrect. Vertex form displays the minimum vertex (4, -9), not the x-intercepts.]]></text></feedback>
+    </answer>
+    <answer fraction="0" format="html">
+      <text><![CDATA[\( f(x) = x(x - 8) + 7 \)]]></text>
+      <feedback format="html"><text><![CDATA[Incorrect.]]></text></feedback>
+    </answer>
+    <tags>
+      <tag><text>sat_domain:advanced_math</text></tag>
+      <tag><text>sat_skill:nonlinear_functions</text></tag>
+      <tag><text>sat_difficulty:medium</text></tag>
+    </tags>
+  </question>
+
+  <!-- Math Question 3: Student-Produced Response (SPR) Fraction/Decimal -->
+  <question type="shortanswer">
+    <name>
+      <text>MATH03 - SPR Fraction and Decimal Equivalence (Algebra)</text>
+    </name>
+    <questiontext format="html">
+      <text><![CDATA[<p>If \( 3x + 1 = 3 \), what is the value of \( x \)?</p>
+<p><em>(Enter your answer as an exact fraction or as a decimal.)</em></p>]]></text>
+    </questiontext>
+    <generalfeedback format="html">
+      <text><![CDATA[<p><strong>Solution:</strong><br>
+\( 3x = 2 \Rightarrow x = \frac{2}{3} \).<br>
+Under SAT SPR rules, accepted representations include: <code>2/3</code>, <code>.6666</code>, <code>.6667</code>, <code>0.666</code>, or <code>0.667</code>.</p>]]></text>
+    </generalfeedback>
+    <defaultgrade>1.0000000</defaultgrade>
+    <usecase>0</usecase>
+    <answer fraction="100" format="plain_text">
+      <text>2/3</text>
+      <feedback format="html"><text><![CDATA[Correct.]]></text></feedback>
+    </answer>
+    <answer fraction="100" format="plain_text">
+      <text>.6666</text>
+      <feedback format="html"><text><![CDATA[Correct.]]></text></feedback>
+    </answer>
+    <answer fraction="100" format="plain_text">
+      <text>.6667</text>
+      <feedback format="html"><text><![CDATA[Correct.]]></text></feedback>
+    </answer>
+    <answer fraction="100" format="plain_text">
+      <text>0.666</text>
+      <feedback format="html"><text><![CDATA[Correct.]]></text></feedback>
+    </answer>
+    <answer fraction="100" format="plain_text">
+      <text>0.667</text>
+      <feedback format="html"><text><![CDATA[Correct.]]></text></feedback>
+    </answer>
+    <tags>
+      <tag><text>sat_domain:algebra</text></tag>
+      <tag><text>sat_skill:linear_equations</text></tag>
+      <tag><text>sat_difficulty:medium</text></tag>
+      <tag><text>sat_format:spr</text></tag>
+    </tags>
+  </question>
+
+  <!-- Math Question 4: Geometry & Trigonometry SPR Grid-in -->
+  <question type="shortanswer">
+    <name>
+      <text>MATH04 - SPR Right Triangle Trigonometry (Geometry)</text>
+    </name>
+    <questiontext format="html">
+      <text><![CDATA[<p>In right triangle \( ABC \), angle \( C \) is the right angle. If \( \sin(A) = \frac{3}{5} \), what is the value of \( \cos(B) \)?</p>
+<p><em>(Enter your answer as a fraction or decimal.)</em></p>]]></text>
+    </questiontext>
+    <generalfeedback format="html">
+      <text><![CDATA[<p><strong>Solution:</strong><br>
+In any right triangle where angles \( A \) and \( B \) are complementary acute angles, \( \cos(B) = \sin(A) \).<br>
+Therefore, \( \cos(B) = \frac{3}{5} = 0.6 \). Accepted answers: <code>3/5</code>, <code>0.6</code>, or <code>.6</code>.</p>]]></text>
+    </generalfeedback>
+    <defaultgrade>1.0000000</defaultgrade>
+    <usecase>0</usecase>
+    <answer fraction="100" format="plain_text">
+      <text>3/5</text>
+      <feedback format="html"><text><![CDATA[Correct.]]></text></feedback>
+    </answer>
+    <answer fraction="100" format="plain_text">
+      <text>0.6</text>
+      <feedback format="html"><text><![CDATA[Correct.]]></text></feedback>
+    </answer>
+    <answer fraction="100" format="plain_text">
+      <text>.6</text>
+      <feedback format="html"><text><![CDATA[Correct.]]></text></feedback>
+    </answer>
+    <tags>
+      <tag><text>sat_domain:geometry_trig</text></tag>
+      <tag><text>sat_skill:right_triangles_trig</text></tag>
+      <tag><text>sat_difficulty:easy</text></tag>
+      <tag><text>sat_format:spr</text></tag>
+    </tags>
+  </question>
+</quiz>
