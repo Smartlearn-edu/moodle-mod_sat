@@ -99,7 +99,7 @@ echo $infobox;
 // Teacher management links.
 $canmanage = has_capability('mod/sat:manage', $context);
 $canattempt = has_capability('mod/sat:attempt', $context);
-$canpreview = has_capability('mod/sat:preview', $context);
+$canpreview = get_capability_info('mod/sat:preview') ? has_capability('mod/sat:preview', $context) : $canmanage;
 
 if ($canmanage) {
     echo html_writer::start_div('mb-4 d-flex gap-2');
