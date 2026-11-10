@@ -62,6 +62,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'mod_sat/calculator'], funct
             // Navigation buttons.
             $('#sat-btn-next').on('click', $.proxy(this.handleNext, this));
             $('#sat-btn-prev').on('click', $.proxy(this.handlePrev, this));
+            $('#sat-btn-submit-module, #sat-btn-top-submit, #sat-btn-drawer-submit').on('click', $.proxy(this.showModuleReview, this));
 
             // Flag toggle.
             $('#sat-btn-flag').on('click', $.proxy(this.toggleFlag, this));
@@ -362,7 +363,24 @@ define(['jquery', 'core/ajax', 'core/notification', 'mod_sat/calculator'], funct
         },
 
         showModuleReview: function() {
-            var confirmSubmit = confirm('You have reached the end of this module. Would you like to review your questions or submit the module now? Click OK to Submit.');
+            var total = (this.attemptData && this.attemptData.slots) ? this.attemptData.slots.length : 0;
+            var answeredCount = 0;
+            var self = this;
+            if (this.attemptData && this.attemptData.slots) {
+                this.attemptData.slots.forEach(function(s) {
+                    if (self.responses[s.slot] && self.responses[s.slot].trim() !== '') {
+                        answeredCount++;
+                    }
+                });
+            }
+            var unanswered = total - answeredCount;
+            var msg = 'Module Summary:\n• Answered: ' + answeredCount + ' of ' + total + ' questions.';
+            if (unanswered > 0) {
+                msg += '\n• Unanswered: ' + unanswered + ' question(s).';
+            }
+            msg += '\n\nAre you sure you want to submit this module now?\n(Click OK to Submit, or Cancel to keep working)';
+
+            var confirmSubmit = confirm(msg);
             if (confirmSubmit) {
                 this.submitModule();
             }

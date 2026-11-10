@@ -135,6 +135,9 @@ echo $OUTPUT->header();
             <button id="sat-btn-annotate" class="btn btn-sm btn-outline-success d-flex align-items-center gap-1" title="Highlighter and Notes">
                 <i class="fa fa-pencil"></i> Annotate
             </button>
+            <button id="sat-btn-top-submit" class="btn btn-sm btn-warning d-flex align-items-center gap-1 fw-bold text-dark" title="Review questions and submit this module">
+                <i class="fa fa-check-circle"></i> Submit Module
+            </button>
             <button id="sat-btn-more" class="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1" title="Accessibility & Options">
                 <i class="fa fa-cog"></i>
             </button>
@@ -204,6 +207,9 @@ echo $OUTPUT->header();
         <div class="d-flex align-items-center gap-2">
             <button id="sat-btn-prev" class="btn btn-outline-light px-4" disabled>Back</button>
             <button id="sat-btn-next" class="btn btn-primary px-4">Next</button>
+            <button id="sat-btn-submit-module" class="btn btn-warning px-3 d-flex align-items-center gap-1 fw-bold text-dark" title="Review questions and submit this module">
+                <i class="fa fa-check-circle"></i> Review & Submit
+            </button>
         </div>
     </footer>
 
@@ -221,6 +227,11 @@ echo $OUTPUT->header();
             <span><i class="fa fa-square text-dark"></i> Answered</span>
             <span><i class="fa fa-square-o text-muted"></i> Unanswered</span>
             <span><i class="fa fa-bookmark text-warning"></i> Marked for Review</span>
+        </div>
+        <div class="mt-3 pt-3 border-top text-center">
+            <button id="sat-btn-drawer-submit" class="btn btn-warning w-100 fw-bold text-dark d-flex align-items-center justify-content-center gap-2">
+                <i class="fa fa-check-circle"></i> Review & Submit Module
+            </button>
         </div>
     </div>
 

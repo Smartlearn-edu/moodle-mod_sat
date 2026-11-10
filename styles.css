@@ -12,16 +12,24 @@
     background-color: #f8fafc;
 }
 
+.path-mod-sat #page-header,
+.path-mod-sat .page-header {
+    display: none !important;
+}
+
 .path-mod-sat .sat-top-bar {
-    height: 54px;
+    min-height: 54px;
     border-bottom: 2px solid #334155;
     background-color: #0f172a !important;
 }
 
 .path-mod-sat .sat-bottom-bar {
-    height: 60px;
+    min-height: 60px;
     background-color: #0f172a !important;
     border-top: 1px solid #334155;
+    position: sticky;
+    bottom: 0;
+    z-index: 1030;
 }
 
 .path-mod-sat .sat-pane {
