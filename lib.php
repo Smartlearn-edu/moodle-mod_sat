@@ -141,6 +141,19 @@ function sat_delete_instance($id) {
         }
     }
 
+    // Delete question references for slots in this activity.
+    $slots = $DB->get_records('sat_slots', ['satid' => $id], '', 'id');
+    if (!empty($slots)) {
+        [$insql, $params] = $DB->get_in_or_equal(array_keys($slots), SQL_PARAMS_NAMED);
+        $params['component'] = 'mod_sat';
+        $params['questionarea'] = 'slot';
+        $DB->delete_records_select(
+            'question_references',
+            "component = :component AND questionarea = :questionarea AND itemid $insql",
+            $params
+        );
+    }
+
     $DB->delete_records('sat_attempts', ['satid' => $id]);
     $DB->delete_records('sat_slots', ['satid' => $id]);
     $DB->delete_records('sat_modules', ['satid' => $id]);
