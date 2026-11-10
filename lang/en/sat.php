@@ -118,6 +118,7 @@ $string['state_finished'] = 'Completed';
 $string['state_inprogress'] = 'In progress';
 $string['state_paused'] = 'Paused (waiting for next module)';
 $string['summaryofattempts'] = 'Summary of your previous attempts';
+$string['task_close_overdue_modules'] = 'Automatically close overdue SAT exam modules';
 $string['threshold_math'] = 'Math routing threshold (%)';
 $string['threshold_math_help'] = 'Percentage of scored marks in Math Module 1 required to route to the Hard Module 2.';
 $string['threshold_rw'] = 'Reading & Writing routing threshold (%)';
