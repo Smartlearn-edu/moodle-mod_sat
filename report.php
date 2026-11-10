@@ -57,7 +57,7 @@ $sql = "SELECT a.*, u.firstname, u.lastname, u.email
           FROM {sat_attempts} a
           JOIN {user} u ON u.id = a.userid
          WHERE a.satid = :satid
-      ORDER BY a.timecreated DESC";
+      ORDER BY a.timestart DESC, a.id DESC";
 
 $attempts = $DB->get_records_sql($sql, ['satid' => $sat->id]);
 

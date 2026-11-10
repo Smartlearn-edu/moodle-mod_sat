@@ -17,6 +17,7 @@
 namespace mod_sat\local;
 
 use context_module;
+use question_bank;
 use question_engine;
 use stdClass;
 
@@ -103,6 +104,7 @@ class attempt_manager {
         $slots = structure_manager::get_slots($module->id);
         $firstslotnumber = 1;
         $lastslotnumber = 1;
+        $isfirst = true;
 
         if (!empty($slots)) {
             foreach ($slots as $s) {
@@ -110,6 +112,10 @@ class attempt_manager {
                     $question = question_bank::load_question($s->questionid);
                     $qubaslot = $quba->add_question($question, (float)$s->maxmark);
                     $quba->start_question($qubaslot);
+                    if ($isfirst) {
+                        $firstslotnumber = $qubaslot;
+                        $isfirst = false;
+                    }
                     $lastslotnumber = $qubaslot;
                 }
             }
@@ -229,6 +235,67 @@ class attempt_manager {
             $attempt->timefinish = $now;
             $nextaction = 'finish';
             self::finalize_attempt_scoring($sat, $attempt);
+        } else {
+            // Provision next module attempt.
+            $nextsection = $module->section;
+            if ($module->stage === 'm1') {
+                $route = ($module->section === 'rw') ? $attempt->route_rw : $attempt->route_math;
+                $nextstage = 'm2_' . $route;
+            } else {
+                // Was Module 2 of RW in a full exam -> transition to Math Module 1.
+                $nextsection = 'math';
+                $nextstage = 'm1';
+            }
+
+            $nextmodule = $DB->get_record('sat_modules', [
+                'satid' => $sat->id,
+                'section' => $nextsection,
+                'stage' => $nextstage,
+            ]);
+
+            if ($nextmodule) {
+                // Add next module's questions into question usage.
+                $nextslots = structure_manager::get_slots($nextmodule->id);
+                $firstslotnum = 1;
+                $lastslotnum = 1;
+
+                if (!empty($nextslots)) {
+                    $isfirstslot = true;
+                    foreach ($nextslots as $ns) {
+                        if (!empty($ns->questionid)) {
+                            $loadedq = question_bank::load_question($ns->questionid);
+                            $qslot = $quba->add_question($loadedq, (float)$ns->maxmark);
+                            $quba->start_question($qslot);
+                            if ($isfirstslot) {
+                                $firstslotnum = $qslot;
+                                $isfirstslot = false;
+                            }
+                            $lastslotnum = $qslot;
+                        }
+                    }
+                    question_engine::save_questions_usage_by_activity($quba);
+                }
+
+                // Calculate accommodation multiplier for next module.
+                $override = $DB->get_record('sat_overrides', ['satid' => $sat->id, 'userid' => $attempt->userid]);
+                $multiplier = $override ? (float)$override->timemultiplier : 1.0;
+                $timelimit = (int) round($nextmodule->timelimit * $multiplier);
+
+                $nextmodattempt = new stdClass();
+                $nextmodattempt->attemptid = $attempt->id;
+                $nextmodattempt->moduleid = $nextmodule->id;
+                $nextmodattempt->state = ($sat->pacing_mode === 'paced') ? 'paused' : 'inprogress';
+                $nextmodattempt->firstslot = $firstslotnum;
+                $nextmodattempt->lastslot = $lastslotnum;
+                $nextmodattempt->timestart = $now;
+                $nextmodattempt->timedeadline = $now + $timelimit;
+                $nextmodattempt->timefinish = 0;
+                $nextmodattempt->rawscore = 0.0;
+                $nextmodattempt->maxscore = 0.0;
+                $DB->insert_record('sat_module_attempts', $nextmodattempt);
+
+                $attempt->currentstage = $nextsection . '_' . $nextstage;
+            }
         }
 
         $attempt->timemodified = $now;
