@@ -101,11 +101,18 @@ $canmanage = has_capability('mod/sat:manage', $context);
 $canattempt = has_capability('mod/sat:attempt', $context);
 $canpreview = get_capability_info('mod/sat:preview') ? has_capability('mod/sat:preview', $context) : $canmanage;
 
-if ($canmanage) {
-    echo html_writer::start_div('mb-4 d-flex gap-2');
-    echo html_writer::link(new moodle_url('/mod/sat/edit.php', ['cmid' => $cm->id]), get_string('managequestions', 'mod_sat'), ['class' => 'btn btn-outline-secondary']);
-    echo html_writer::link(new moodle_url('/mod/sat/report.php', ['id' => $cm->id]), get_string('viewreports', 'mod_sat'), ['class' => 'btn btn-outline-info']);
-    echo html_writer::link(new moodle_url('/mod/sat/overrides.php', ['cmid' => $cm->id]), get_string('overrides', 'mod_sat'), ['class' => 'btn btn-outline-warning']);
+if ($canmanage || has_capability('mod/sat:viewreports', $context)) {
+    echo html_writer::start_div('mb-4 d-flex flex-wrap gap-2');
+    if ($canmanage) {
+        echo html_writer::link(new moodle_url('/mod/sat/edit.php', ['cmid' => $cm->id]), get_string('managequestions', 'mod_sat'), ['class' => 'btn btn-outline-secondary']);
+    }
+    if (has_capability('mod/sat:viewreports', $context)) {
+        echo html_writer::link(new moodle_url('/mod/sat/report.php', ['id' => $cm->id]), get_string('viewreports', 'mod_sat'), ['class' => 'btn btn-outline-info']);
+        echo html_writer::link(new moodle_url('/mod/sat/analytics.php', ['id' => $cm->id]), get_string('cohort_analytics', 'mod_sat'), ['class' => 'btn btn-outline-primary']);
+    }
+    if ($canmanage) {
+        echo html_writer::link(new moodle_url('/mod/sat/overrides.php', ['cmid' => $cm->id]), get_string('overrides', 'mod_sat'), ['class' => 'btn btn-outline-warning']);
+    }
     echo html_writer::end_div();
 }
 
@@ -143,7 +150,10 @@ if (!empty($attempts)) {
         if ($att->state === 'inprogress' || $att->state === 'paused') {
             $actionlink = html_writer::link(new moodle_url('/mod/sat/attempt.php', ['id' => $cm->id]), get_string('continueattempt', 'mod_sat'), ['class' => 'btn btn-sm btn-primary']);
         } else {
-            $actionlink = html_writer::link(new moodle_url('/mod/sat/review.php', ['attemptid' => $att->id]), get_string('review', 'mod_sat'), ['class' => 'btn btn-sm btn-outline-secondary']);
+            $buttons = [];
+            $buttons[] = html_writer::link(new moodle_url('/mod/sat/diagnostic.php', ['attemptid' => $att->id]), get_string('diagnostic_report', 'mod_sat'), ['class' => 'btn btn-sm btn-primary']);
+            $buttons[] = html_writer::link(new moodle_url('/mod/sat/review.php', ['attemptid' => $att->id]), get_string('review', 'mod_sat'), ['class' => 'btn btn-sm btn-outline-secondary']);
+            $actionlink = implode(' ', $buttons);
         }
 
         $table->data[] = [

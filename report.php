@@ -43,6 +43,15 @@ $PAGE->set_context($context);
 echo $OUTPUT->header();
 echo $OUTPUT->heading(get_string('viewreports', 'mod_sat') . ' — ' . format_string($sat->name));
 
+// Top navigation bar for teachers.
+echo html_writer::start_div('d-flex justify-content-between align-items-center mb-4');
+echo html_writer::start_div('d-flex gap-2');
+echo html_writer::link(new moodle_url('/mod/sat/analytics.php', ['id' => $cm->id]), get_string('cohort_analytics', 'mod_sat'), ['class' => 'btn btn-primary']);
+echo html_writer::link(new moodle_url('/mod/sat/edit.php', ['cmid' => $cm->id]), get_string('managequestions', 'mod_sat'), ['class' => 'btn btn-outline-secondary']);
+echo html_writer::link(new moodle_url('/mod/sat/overrides.php', ['cmid' => $cm->id]), get_string('overrides', 'mod_sat'), ['class' => 'btn btn-outline-warning']);
+echo html_writer::end_div();
+echo html_writer::end_div();
+
 // Attempts list.
 $sql = "SELECT a.*, u.firstname, u.lastname, u.email
           FROM {sat_attempts} a
@@ -64,8 +73,9 @@ if (empty($attempts)) {
         get_string('scaled_math', 'mod_sat'),
         get_string('scaled_total', 'mod_sat'),
         get_string('timecompleted', 'mod_sat'),
+        get_string('action', 'mod_sat'),
     ];
-    $table->attributes['class'] = 'table table-bordered table-striped';
+    $table->attributes['class'] = 'table table-bordered table-striped align-middle';
 
     foreach ($attempts as $att) {
         $fullname = fullname($att);
@@ -77,6 +87,27 @@ if (empty($attempts)) {
         $mathstr = $att->scaled_math !== null ? (string)$att->scaled_math : '-';
         $totalstr = $att->scaled_total !== null ? (string)$att->scaled_total : '-';
 
+        $actions = [];
+        if ($att->state === 'finished') {
+            $actions[] = html_writer::link(
+                new moodle_url('/mod/sat/diagnostic.php', ['attemptid' => $att->id]),
+                get_string('diagnostic_report', 'mod_sat'),
+                ['class' => 'btn btn-sm btn-outline-primary']
+            );
+            $actions[] = html_writer::link(
+                new moodle_url('/mod/sat/review.php', ['attemptid' => $att->id]),
+                get_string('review', 'mod_sat'),
+                ['class' => 'btn btn-sm btn-outline-secondary']
+            );
+        } else if ($att->state === 'inprogress' || $att->state === 'paused') {
+            $actions[] = html_writer::link(
+                new moodle_url('/mod/sat/review.php', ['attemptid' => $att->id]),
+                get_string('review', 'mod_sat'),
+                ['class' => 'btn btn-sm btn-outline-secondary']
+            );
+        }
+        $actionstr = implode(' ', $actions);
+
         $table->data[] = [
             $userlink,
             $att->attempt,
@@ -85,6 +116,7 @@ if (empty($attempts)) {
             $mathstr,
             $totalstr,
             $completedstr,
+            $actionstr,
         ];
     }
 
