@@ -1,0 +1,203 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<XMLDB PATH="mod/sat/db" VERSION="20260420" COMMENT="XMLDB file for Moodle mod_sat">
+  <TABLES>
+    <TABLE NAME="sat" COMMENT="Defines SAT exam simulator activity instances">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="course" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="name" TYPE="char" LENGTH="255" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="intro" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="introformat" TYPE="int" LENGTH="4" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="exam_scope" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="full" SEQUENCE="false" COMMENT="full, rw_only, math_only, single_module"/>
+        <FIELD NAME="pacing_mode" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="continuous" SEQUENCE="false" COMMENT="continuous, paced"/>
+        <FIELD NAME="routing_mode" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="adaptive" SEQUENCE="false" COMMENT="adaptive, fixed"/>
+        <FIELD NAME="timeopen" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="timeclose" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="graceperiod" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="breakduration" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="600" SEQUENCE="false"/>
+        <FIELD NAME="attempts" TYPE="int" LENGTH="4" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="grademethod" TYPE="int" LENGTH="4" NOTNULL="true" DEFAULT="1" SEQUENCE="false"/>
+        <FIELD NAME="threshold_rw" TYPE="int" LENGTH="4" NOTNULL="true" DEFAULT="60" SEQUENCE="false" COMMENT="Percentage threshold in M1 for hard M2"/>
+        <FIELD NAME="threshold_math" TYPE="int" LENGTH="4" NOTNULL="true" DEFAULT="60" SEQUENCE="false" COMMENT="Percentage threshold in M1 for hard M2"/>
+        <FIELD NAME="reviewoptions" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="grade" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="1600" SEQUENCE="false"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="course" UNIQUE="false" FIELDS="course"/>
+      </INDEXES>
+    </TABLE>
+
+    <TABLE NAME="sat_modules" COMMENT="Defines modules inside an SAT exam instance">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="satid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="section" TYPE="char" LENGTH="10" NOTNULL="true" DEFAULT="rw" SEQUENCE="false" COMMENT="rw or math"/>
+        <FIELD NAME="stage" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="m1" SEQUENCE="false" COMMENT="m1, m2_easy, m2_hard, m2_fixed"/>
+        <FIELD NAME="timelimit" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="1920" SEQUENCE="false"/>
+        <FIELD NAME="questioncount" TYPE="int" LENGTH="4" NOTNULL="true" DEFAULT="27" SEQUENCE="false"/>
+        <FIELD NAME="sortorder" TYPE="int" LENGTH="4" NOTNULL="true" DEFAULT="1" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="satid_fk" TYPE="foreign" FIELDS="satid" REFTABLE="sat" REFFIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="satid_stage" UNIQUE="false" FIELDS="satid, stage"/>
+      </INDEXES>
+    </TABLE>
+
+    <TABLE NAME="sat_slots" COMMENT="Question slots in each SAT module">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="satid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="moduleid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="slot" TYPE="int" LENGTH="4" NOTNULL="true" DEFAULT="1" SEQUENCE="false"/>
+        <FIELD NAME="maxmark" TYPE="number" LENGTH="12" DECIMALS="7" NOTNULL="true" DEFAULT="1.0000000" SEQUENCE="false"/>
+        <FIELD NAME="is_scored" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="1" SEQUENCE="false" COMMENT="0 for unscored pretest"/>
+        <FIELD NAME="is_spr" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="1 for math student produced response"/>
+        <FIELD NAME="slottype" TYPE="char" LENGTH="10" NOTNULL="true" DEFAULT="fixed" SEQUENCE="false" COMMENT="fixed or random"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="moduleid_fk" TYPE="foreign" FIELDS="moduleid" REFTABLE="sat_modules" REFFIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="satid_moduleid_slot" UNIQUE="false" FIELDS="satid, moduleid, slot"/>
+      </INDEXES>
+    </TABLE>
+
+    <TABLE NAME="sat_attempts" COMMENT="Student attempts on an SAT exam instance">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="satid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="attempt" TYPE="int" LENGTH="4" NOTNULL="true" DEFAULT="1" SEQUENCE="false"/>
+        <FIELD NAME="uniqueid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Links to question_usages id"/>
+        <FIELD NAME="state" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="inprogress" SEQUENCE="false" COMMENT="inprogress, paused, finished, abandoned"/>
+        <FIELD NAME="currentstage" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="rw_m1" SEQUENCE="false"/>
+        <FIELD NAME="route_rw" TYPE="char" LENGTH="10" NOTNULL="true" DEFAULT="none" SEQUENCE="false"/>
+        <FIELD NAME="route_math" TYPE="char" LENGTH="10" NOTNULL="true" DEFAULT="none" SEQUENCE="false"/>
+        <FIELD NAME="preview" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="raw_rw" TYPE="int" LENGTH="6" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="raw_math" TYPE="int" LENGTH="6" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="scaled_rw" TYPE="int" LENGTH="6" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="scaled_math" TYPE="int" LENGTH="6" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="scaled_total" TYPE="int" LENGTH="6" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="timestart" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="timefinish" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="satid_fk" TYPE="foreign" FIELDS="satid" REFTABLE="sat" REFFIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="satid_userid_attempt" UNIQUE="false" FIELDS="satid, userid, attempt"/>
+        <INDEX NAME="uniqueid" UNIQUE="false" FIELDS="uniqueid"/>
+      </INDEXES>
+    </TABLE>
+
+    <TABLE NAME="sat_module_attempts" COMMENT="Tracks student progress and deadlines per module">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="attemptid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="moduleid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="state" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="notstarted" SEQUENCE="false"/>
+        <FIELD NAME="firstslot" TYPE="int" LENGTH="6" NOTNULL="true" DEFAULT="1" SEQUENCE="false"/>
+        <FIELD NAME="lastslot" TYPE="int" LENGTH="6" NOTNULL="true" DEFAULT="1" SEQUENCE="false"/>
+        <FIELD NAME="timestart" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="timedeadline" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="timefinish" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="rawscore" TYPE="number" LENGTH="10" DECIMALS="5" NOTNULL="true" DEFAULT="0.00000" SEQUENCE="false"/>
+        <FIELD NAME="maxscore" TYPE="number" LENGTH="10" DECIMALS="5" NOTNULL="true" DEFAULT="0.00000" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="attemptid_fk" TYPE="foreign" FIELDS="attemptid" REFTABLE="sat_attempts" REFFIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="attemptid_moduleid" UNIQUE="false" FIELDS="attemptid, moduleid"/>
+      </INDEXES>
+    </TABLE>
+
+    <TABLE NAME="sat_slot_state" COMMENT="Stores UI state per question slot (cross-outs, highlights)">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="attemptid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="slot" TYPE="int" LENGTH="6" NOTNULL="true" DEFAULT="1" SEQUENCE="false"/>
+        <FIELD NAME="eliminated" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="JSON array of eliminated option keys"/>
+        <FIELD NAME="annotations" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="JSON array of text highlights and notes"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="attemptid_fk" TYPE="foreign" FIELDS="attemptid" REFTABLE="sat_attempts" REFFIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="attemptid_slot" UNIQUE="false" FIELDS="attemptid, slot"/>
+      </INDEXES>
+    </TABLE>
+
+    <TABLE NAME="sat_overrides" COMMENT="Accommodations and overrides for users and groups">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="satid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="groupid" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="timeopen" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="timeclose" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="attempts" TYPE="int" LENGTH="4" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="timemultiplier" TYPE="number" LENGTH="4" DECIMALS="2" NOTNULL="false" SEQUENCE="false" COMMENT="e.g. 1.50 for 1.5x time"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="satid_fk" TYPE="foreign" FIELDS="satid" REFTABLE="sat" REFFIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="satid_userid" UNIQUE="false" FIELDS="satid, userid"/>
+        <INDEX NAME="satid_groupid" UNIQUE="false" FIELDS="satid, groupid"/>
+      </INDEXES>
+    </TABLE>
+
+    <TABLE NAME="sat_grades" COMMENT="Final aggregated grade per user in sat activity">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="satid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="grade" TYPE="number" LENGTH="10" DECIMALS="5" NOTNULL="true" DEFAULT="0.00000" SEQUENCE="false"/>
+        <FIELD NAME="scaled_rw" TYPE="int" LENGTH="6" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="scaled_math" TYPE="int" LENGTH="6" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="satid_fk" TYPE="foreign" FIELDS="satid" REFTABLE="sat" REFFIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="satid_userid" UNIQUE="false" FIELDS="satid, userid"/>
+      </INDEXES>
+    </TABLE>
+
+    <TABLE NAME="sat_score_tables" COMMENT="Raw percent to 200-800 scaled score lookup curves">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="satid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="0 for site default"/>
+        <FIELD NAME="section" TYPE="char" LENGTH="10" NOTNULL="true" DEFAULT="rw" SEQUENCE="false" COMMENT="rw or math"/>
+        <FIELD NAME="route" TYPE="char" LENGTH="10" NOTNULL="true" DEFAULT="easy" SEQUENCE="false" COMMENT="easy or hard"/>
+        <FIELD NAME="rawpercent" TYPE="int" LENGTH="4" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="scaledscore" TYPE="int" LENGTH="6" NOTNULL="true" DEFAULT="200" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="satid_section_route_raw" UNIQUE="false" FIELDS="satid, section, route, rawpercent"/>
+      </INDEXES>
+    </TABLE>
+  </TABLES>
+</XMLDB>
