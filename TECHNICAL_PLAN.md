@@ -260,33 +260,91 @@ The exam runner (`attempt.php`) uses Moodle's minimal/embedded layout and mounts
 
 ---
 
-## 7. Phased Implementation Plan
+## 7. Incremental Phased Implementation & Testing Plan
 
-### Phase 1: Core Plugin, Exam Engine & Simulator UI
-1. **Plugin Scaffolding & Database (`mod_sat`)**:
-   * `version.php` (Moodle 5.2+, PHP 8.3+), `db/install.xml`, `db/access.php`, `db/services.php`, `db/tasks.php`, `lib.php`, `settings.php`, `lang/en/sat.php`.
-   * Default adaptive score conversion tables (`200–800` per section) seeded on install.
-2. **Question Engine, Reference Manager & SPR Expander**:
-   * `classes/local/attempt_manager.php`: Manages `question_usage_by_activity`, server-side deadlines, and dynamic mid-attempt appending of routed Module 2 questions.
-   * `classes/local/mst_router.php` & `classes/local/scorer.php`: Evaluates Module 1 percentage against threshold, assigns Easy/Hard Module 2 route, computes scaled scores, and updates Moodle Gradebook (`grade_update`).
-   * `classes/local/spr_helper.php`: Validates SPR input and populates equivalent fraction/decimal answers on `qtype_shortanswer` questions.
-3. **Teacher Management Pages**:
-   * `mod_form.php`: Exam scope (Full, RW, Math, Single Module), Pacing (Continuous vs. Paced), Routing (Adaptive vs. Fixed), Timing, Attempts, Review Options, Restrict Access, Completion.
-   * `edit.php`: Module & Slot builder connected to Moodle 5.2's `mod_qbank` (`question_references` / `question_set_references`), with 1-click official module presets (27 RW / 22 Math) and SPR answer expander.
-   * `overrides.php`: User and group time accommodations (1.5×, 2.0×, custom dates).
-   * `report.php`: Basic teacher attempts report (student, module progress, route taken, raw & scaled scores, CSV export, regrade/delete).
-4. **Student Pages & React Exam Simulator**:
-   * `view.php`: Activity summary, attempt history, module-by-module status (with *Resume Module 2* button for Paced mode).
-   * `attempt.php` + React/TypeScript UI: Split-pane workspace, timer, option eliminator, passage highlighter, built-in open-source Graphing/Scientific Calculator, Math Reference modal, question navigation matrix, and module review screen.
-   * `review.php`: Post-attempt review page honoring the teacher's configured review options.
-5. **Moodle Compliance & Automated Tests**:
-   * Backup & Restore (`backup/moodle2/`), Privacy API (`classes/privacy/provider.php`), Scheduled Task (`close_overdue_modules`), and PHPUnit tests for routing, scoring, and SPR validation.
-   * Sample original question bank XML (Math & RW across all domains) for immediate testing.
+Development is divided into **6 self-contained phases**. Every phase ends with a mandatory **Test Gate** (automated `validator.py` + PHPUnit tests + manual browser verification in Moodle 5.2) before proceeding to the next phase.
 
-### Phase 2: Advanced Diagnostic Reporting & Analytics
-1. **Student Diagnostic Report**:
-   * Detailed score report showing Total Score (400–1600), Section Scores (200–800), and performance bars across all **8 Official SAT Domains** and **19 Sub-Skills** (derived from Moodle Question Tags).
-   * Time-spent-per-question analytics and question-by-question explanation review.
-2. **Teacher Cohort & Class Analytics**:
-   * Class score distribution histograms, Easy vs. Hard routing rates, and Domain/Skill mastery heatmaps to identify class-wide weaknesses for targeted instruction.
-   * Printable / PDF diagnostic score reports for students and parents.
+```mermaid
+flowchart LR
+    P1["Phase 1<br/>Foundation & Schema"] --> T1{"Test Gate 1"}
+    T1 --> P2["Phase 2<br/>QBank & SPR Builder"] --> T2{"Test Gate 2"}
+    T2 --> P3["Phase 3<br/>MST Engine & Scoring"] --> T3{"Test Gate 3"}
+    T3 --> P4["Phase 4<br/>Simulator UI & Tools"] --> T4{"Test Gate 4"}
+    T4 --> P5["Phase 5<br/>Overrides, Reports & Backup"] --> T5{"Test Gate 5"}
+    T5 --> P6["Phase 6<br/>Diagnostic Analytics"] --> T6{"Test Gate 6"}
+```
+
+---
+
+### Phase 1: Plugin Foundation, Database Schema & Activity Settings
+* **Deliverables**:
+  * `version.php` (Moodle 5.2+, PHP 8.3+), `db/install.xml` (all 9 tables), `db/install.php` (seeding default 200–800 score lookup curves), `db/access.php`.
+  * `lib.php` (activity lifecycle callbacks, grade item setup, completion callbacks).
+  * `mod_form.php` (Exam Scope: Full / Math Only / RW Only / Single Module; Pacing: Continuous vs. Paced; Routing: Adaptive vs. Fixed; Timing; Attempts; Grading Method; Review Options; Restrict Access; Activity Completion).
+  * `view.php` (initial activity landing page), `index.php`, `settings.php`, `lang/en/sat.php`, `pix/monologo.svg`.
+* **Test Gate 1**:
+  * **Automated**: Run PHP 8.3 syntax lint and `validator.py` on `/home/mohammad/Dev/plugins/mod/sat/`.
+  * **Browser Test in Moodle 5.2**: Install `mod_sat`, add a new *SAT Exam Simulator* activity to a course, test saving and editing all modes in `mod_form.php`, and verify `view.php` and Gradebook item creation.
+
+---
+
+### Phase 2: Module & Question Bank Builder (`mod_qbank` Integration & SPR Expander)
+* **Deliverables**:
+  * `classes/local/structure_manager.php`: Auto-provisions modules (`mdl_sat_modules`) based on exam scope and manages question slots (`mdl_sat_slots`) linked via Moodle 5.2 `question_references` and `question_set_references`.
+  * `edit.php`: Teacher UI to add fixed questions or random tag/category slots from `mod_qbank`, apply 1-click official SAT presets (27 RW / 22 Math), mark pretest (unscored) questions, and preview stimulus/question `<hr>` splits.
+  * `classes/local/spr_helper.php`: Rule-based SAT Student-Produced Response (SPR) validator and answer expander (`2/3` $\rightarrow$ `2/3`, `.6666`, `.6667`, `0.666`, `0.667`).
+  * `tests/fixtures/sample_sat_questions.xml`: Original sample Math (MCQ + SPR) and Reading & Writing questions tagged across all 8 official SAT domains.
+* **Test Gate 2**:
+  * **Automated**: PHPUnit test suite (`tests/spr_helper_test.php` and `tests/structure_manager_test.php`) verifying fraction/decimal equivalence expansion, negative width rules, and slot reference creation.
+  * **Browser Test in Moodle 5.2**: Import `sample_sat_questions.xml` into the Question Bank, open `edit.php`, populate Module 1, Module 2 (Easy), and Module 2 (Hard) with questions, and test the 1-click SPR answer expander.
+
+---
+
+### Phase 3: Attempt Engine, Multi-Stage Adaptive Routing (MST), Paced Sessions & Scoring
+* **Deliverables**:
+  * `classes/local/attempt_manager.php`: Manages `question_usage_by_activity`, enforces server-side deadlines (`timedeadline`), saves responses/flags/eliminations/annotations, handles module submissions, and pauses/resumes at module boundaries in Paced Mode.
+  * `classes/local/mst_router.php` & `classes/local/scorer.php`: Evaluates Module 1 scored percentage against threshold, routes to Easy or Hard Module 2 (dynamically appending M2 questions to the running `question_usage_by_activity`), computes 200–800 section and 400–1600 total scores, and updates the Moodle Gradebook (`grade_update`).
+  * `classes/external/*` & `db/services.php`: AJAX Web Services (`get_attempt_state`, `save_response`, `save_slot_state`, `submit_module`, `start_next_module`).
+  * `classes/task/close_overdue_modules.php` & `db/tasks.php`: Scheduled task to auto-submit expired modules.
+* **Test Gate 3**:
+  * **Automated**: PHPUnit test suite (`tests/attempt_mst_test.php`) testing:
+    1. High Module 1 score ($\ge 60\%$) $\rightarrow$ routes to **Hard Module 2** and computes Hard curve scaled score.
+    2. Low Module 1 score ($< 60\%$) $\rightarrow$ routes to **Easy Module 2** and computes Easy curve scaled score.
+    3. Paced Mode lifecycle: Start M1 $\rightarrow$ Submit M1 $\rightarrow$ Pause $\rightarrow$ Resume M2 later $\rightarrow$ Finish & push grade to Gradebook.
+    4. Overdue module auto-submission via scheduled task.
+
+---
+
+### Phase 4: Exam Simulator Frontend UI (`attempt.php`) & Built-in Open-Source Tools
+* **Deliverables**:
+  * `attempt.php` (distraction-free embedded layout) + interactive frontend exam runner (`amd/src/` & `templates/`).
+  * **Header Bar**: Section/module indicator, server-synchronized countdown timer (Hide/Show toggle, locked visible $<5$ min), and tool tray.
+  * **Built-in Open-Source Graphing & Scientific Calculator**: Self-hosted draggable/resizable calculator panel supporting multi-function plotting ($f(x)$), trace/intersections, and scientific mode.
+  * **Built-in Math Reference Sheet Modal**: Original SVG geometric diagrams and LaTeX formulas.
+  * **Workspace & Tools**: Split-pane stimulus/question layout (`<hr>` split), Passage Highlighter & Sticky Notes (RW), Option Eliminator ($A/B/C/D$ strikethrough), live-validated SPR input with fraction preview (Math), and Flag for Review.
+  * **Navigation & Transitions**: Bottom question matrix drawer (*Current*, *Answered*, *Unanswered*, *Flagged*), Module Review screen, 10-minute Break screen, and Paced Mode boundary screen (*Continue to Module 2 now* vs. *Save & Continue Later*).
+* **Test Gate 4**:
+  * **Automated**: JS/AMD build check, CSS scoping check (`.path-mod-sat`), and `validator.py`.
+  * **Browser Test in Moodle 5.2**: Complete a full end-to-end student test sitting in Continuous Mode and Paced Mode; verify the Graphing Calculator, Formula Reference Sheet, Highlighter, Option Eliminator, SPR input validation, and question drawer.
+
+---
+
+### Phase 5: Review Page, Accommodations (`overrides.php`), Teacher Reports & Moodle Compliance
+* **Deliverables**:
+  * `review.php`: Student post-attempt review interface governed by configured `reviewoptions`.
+  * `overrides.php`: Teacher management for User and Group accommodations (**1.5× time**, **2.0× time**, custom dates, extra attempts).
+  * `report.php`: Teacher attempts table (filter by group/state, inspect M1/M2 raw & scaled scores and Easy/Hard routes, regrade, delete attempts, CSV/Excel export).
+  * `backup/moodle2/*` (Activity backup, restore, and course duplication) & `classes/privacy/provider.php` (GDPR Privacy API).
+* **Test Gate 5**:
+  * **Automated**: PHPUnit tests for Overrides (1.5× / 2.0× timer multiplication), Backup/Restore round-trip, and Privacy API provider, plus full `validator.py` audit.
+  * **Browser Test in Moodle 5.2**: Add a 1.5× time override for a student and verify their Math module timer starts at 52:30; review a completed attempt on `review.php`; export grades from `report.php`; duplicate the activity inside the course.
+
+---
+
+### Phase 6: Advanced Diagnostic Reporting & Cohort Analytics Dashboard
+* **Deliverables**:
+  * **Student Diagnostic Report (`diagnostic.php`)**: Visual score gauge (400–1600 / 200–800), mastery bars across all **8 Official SAT Content Domains** and **19 Sub-Skills**, time-spent-per-question breakdown, and printable/PDF report view.
+  * **Teacher Cohort Analytics**: Class score distribution histograms, Easy vs. Hard routing percentages, and Domain/Skill weakness heatmaps to guide classroom instruction.
+* **Test Gate 6**:
+  * **Automated**: PHPUnit tests for domain/skill tag aggregation and accuracy calculation.
+  * **Browser Test in Moodle 5.2**: Inspect student diagnostic report and teacher class analytics dashboard after multiple simulated attempts.
