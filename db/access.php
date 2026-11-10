@@ -57,6 +57,16 @@ $capabilities = [
         ],
     ],
 
+    'mod/sat:preview' => [
+        'captype' => 'read',
+        'contextlevel' => CONTEXT_MODULE,
+        'archetypes' => [
+            'teacher' => CAP_ALLOW,
+            'editingteacher' => CAP_ALLOW,
+            'manager' => CAP_ALLOW,
+        ],
+    ],
+
     'mod/sat:reviewmyattempts' => [
         'captype' => 'read',
         'contextlevel' => CONTEXT_MODULE,
