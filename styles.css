@@ -1,0 +1,136 @@
+/**
+ * Scoped styles for mod_sat exam simulator.
+ *
+ * @package    mod_sat
+ * @copyright  2026 Mohammad Nabil <mohammad@smartlearn.education>
+ * @license    https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
+
+.path-mod-sat #sat-simulator-app {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    user-select: text;
+    background-color: #f8fafc;
+}
+
+.path-mod-sat .sat-top-bar {
+    height: 54px;
+    border-bottom: 2px solid #334155;
+    background-color: #0f172a !important;
+}
+
+.path-mod-sat .sat-bottom-bar {
+    height: 60px;
+    background-color: #0f172a !important;
+    border-top: 1px solid #334155;
+}
+
+.path-mod-sat .sat-pane {
+    height: calc(100vh - 114px);
+    overflow-y: auto;
+}
+
+.path-mod-sat .sat-reading-text {
+    color: #1e293b;
+    font-size: 1.1rem;
+    line-height: 1.8;
+}
+
+.path-mod-sat .sat-option-card {
+    border: 1px solid #cbd5e1;
+    background-color: #ffffff;
+    border-radius: 8px;
+    padding: 14px 18px;
+    cursor: pointer;
+    transition: all 0.15s ease-in-out;
+}
+
+.path-mod-sat .sat-option-card:hover {
+    border-color: #2563eb;
+    background-color: #f0f7ff;
+}
+
+.path-mod-sat .sat-option-card.selected {
+    border-color: #2563eb;
+    background-color: #eff6ff;
+    box-shadow: 0 0 0 2px #2563eb;
+}
+
+.path-mod-sat .sat-option-card.eliminated {
+    opacity: 0.45;
+    background-color: #f1f5f9;
+}
+
+.path-mod-sat .sat-option-card.eliminated .sat-option-text {
+    text-decoration: line-through;
+}
+
+.path-mod-sat .sat-btn-strike {
+    border: 1px solid #94a3b8;
+    color: #64748b;
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 12px;
+    cursor: pointer;
+    background: transparent;
+}
+
+.path-mod-sat .sat-btn-strike:hover,
+.path-mod-sat .sat-btn-strike.active {
+    background-color: #ef4444;
+    color: #ffffff;
+    border-color: #ef4444;
+}
+
+/* Question matrix drawer */
+.path-mod-sat .sat-matrix-drawer {
+    box-shadow: 0 -10px 25px -5px rgba(0, 0, 0, 0.2);
+    border-top: 3px solid #2563eb !important;
+}
+
+.path-mod-sat .sat-matrix-btn {
+    width: 44px;
+    height: 44px;
+    font-weight: 600;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    border: 1px solid #cbd5e1;
+    background-color: #ffffff;
+    color: #1e293b;
+    cursor: pointer;
+}
+
+.path-mod-sat .sat-matrix-btn.current {
+    border: 2px solid #2563eb !important;
+    background-color: #eff6ff !important;
+    color: #2563eb !important;
+}
+
+.path-mod-sat .sat-matrix-btn.answered {
+    background-color: #1e293b;
+    color: #ffffff;
+    border-color: #1e293b;
+}
+
+.path-mod-sat .sat-matrix-btn.flagged::after {
+    content: "★";
+    position: absolute;
+    top: -4px;
+    right: 2px;
+    color: #eab308;
+    font-size: 12px;
+}
+
+/* Floating calculator */
+.path-mod-sat .sat-floating-modal {
+    border: 2px solid #334155;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
+}
+
+.path-mod-sat .calc-btn {
+    font-size: 14px;
+    font-weight: 600;
+    padding: 8px 0;
+}
