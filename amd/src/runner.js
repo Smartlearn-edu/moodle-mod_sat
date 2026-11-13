@@ -96,6 +96,27 @@ define(['jquery', 'core/ajax', 'core/notification', 'mod_sat/calculator'], funct
             promises[0].done(function(data) {
                 self.attemptData = data;
                 self.remainingSeconds = data.timeremaining;
+                self.responses = {};
+                self.eliminations = {};
+                self.flagged = {};
+
+                if (data.slot_states && Array.isArray(data.slot_states)) {
+                    data.slot_states.forEach(function(st) {
+                        if (st.response) {
+                            self.responses[st.slot] = st.response;
+                        }
+                        if (st.flagged) {
+                            self.flagged[st.slot] = true;
+                        }
+                        if (st.eliminated) {
+                            try {
+                                self.eliminations[st.slot] = JSON.parse(st.eliminated);
+                            } catch (e) {
+                                self.eliminations[st.slot] = [];
+                            }
+                        }
+                    });
+                }
 
                 // Update headers.
                 var sectionLabel = (data.section === 'rw') ? 'Reading and Writing' : 'Math';
@@ -206,13 +227,21 @@ define(['jquery', 'core/ajax', 'core/notification', 'mod_sat/calculator'], funct
             var area = $('#sat-mcq-area');
             area.empty();
 
-            var letters = ['A', 'B', 'C', 'D'];
+            var optionList = (slotData.options && slotData.options.length > 0)
+                ? slotData.options
+                : [
+                    {key: 'A', text: 'Option choice A'},
+                    {key: 'B', text: 'Option choice B'},
+                    {key: 'C', text: 'Option choice C'},
+                    {key: 'D', text: 'Option choice D'}
+                ];
             var self = this;
             var currentSlot = slotData.slot;
             var selectedChoice = this.responses[currentSlot] || null;
             var eliminatedList = this.eliminations[currentSlot] || [];
 
-            letters.forEach(function(letter, idx) {
+            optionList.forEach(function(opt) {
+                var letter = opt.key;
                 var card = $('<div class="sat-option-card d-flex align-items-center justify-content-between"></div>');
                 if (selectedChoice === letter) {
                     card.addClass('selected');
@@ -223,7 +252,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'mod_sat/calculator'], funct
 
                 var leftSide = $('<div class="d-flex align-items-center gap-3"></div>');
                 leftSide.append('<span class="badge bg-secondary rounded-circle p-2">' + letter + '</span>');
-                leftSide.append('<span class="sat-option-text">Option choice ' + letter + '</span>');
+                var textSpan = $('<span class="sat-option-text"></span>');
+                textSpan.html(opt.text);
+                leftSide.append(textSpan);
                 card.append(leftSide);
 
                 // Option Eliminator (ABC strikethrough button).
@@ -248,10 +279,26 @@ define(['jquery', 'core/ajax', 'core/notification', 'mod_sat/calculator'], funct
             });
         },
 
+        persistSlotState: function(slot) {
+            var promises = Ajax.call([{
+                methodname: 'mod_sat_save_slot_state',
+                args: {
+                    attemptid: this.config.attemptid,
+                    slot: slot,
+                    eliminated: JSON.stringify(this.eliminations[slot] || []),
+                    annotations: '[]',
+                    response: this.responses[slot] || '',
+                    flagged: this.flagged[slot] ? 1 : 0
+                }
+            }]);
+            return promises[0];
+        },
+
         selectOption: function(slot, letter) {
             this.responses[slot] = letter;
             this.renderQuestion();
             this.renderMatrix();
+            this.persistSlotState(slot);
         },
 
         toggleElimination: function(slot, letter) {
@@ -265,17 +312,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'mod_sat/calculator'], funct
                 this.eliminations[slot].splice(idx, 1);
             }
             this.renderQuestion();
-
-            // Autosave slot state to backend.
-            Ajax.call([{
-                methodname: 'mod_sat_save_slot_state',
-                args: {
-                    attemptid: this.config.attemptid,
-                    slot: slot,
-                    eliminated: JSON.stringify(this.eliminations[slot]),
-                    annotations: '[]'
-                }
-            }]);
+            this.persistSlotState(slot);
         },
 
         toggleFlag: function() {
@@ -283,15 +320,26 @@ define(['jquery', 'core/ajax', 'core/notification', 'mod_sat/calculator'], funct
             this.flagged[currentSlot] = !this.flagged[currentSlot];
             this.renderQuestion();
             this.renderMatrix();
+            this.persistSlotState(currentSlot);
         },
 
         handleSprInput: function() {
+            var self = this;
             var input = $('#sat-spr-input');
             var val = input.val();
             var currentSlot = this.attemptData.slots[this.currentIndex].slot;
             this.responses[currentSlot] = val;
             this.updateFractionPreview(val);
             this.renderMatrix();
+
+            if (this.sprTimer) {
+                clearTimeout(this.sprTimer);
+            }
+            this.pendingSprSlot = currentSlot;
+            this.sprTimer = setTimeout(function() {
+                self.pendingSprSlot = null;
+                self.persistSlotState(currentSlot);
+            }, 300);
         },
 
         updateFractionPreview: function(val) {
@@ -392,26 +440,38 @@ define(['jquery', 'core/ajax', 'core/notification', 'mod_sat/calculator'], funct
                 clearInterval(self.timerInterval);
             }
 
-            var promises = Ajax.call([{
-                methodname: 'mod_sat_submit_module',
-                args: {
-                    attemptid: self.config.attemptid,
-                    modattemptid: self.attemptData.modattemptid
-                }
-            }]);
+            var doSubmit = function() {
+                var promises = Ajax.call([{
+                    methodname: 'mod_sat_submit_module',
+                    args: {
+                        attemptid: self.config.attemptid,
+                        modattemptid: self.attemptData.modattemptid
+                    }
+                }]);
 
-            promises[0].done(function(res) {
-                if (res.nextaction === 'finish') {
-                    alert('Congratulations! You have completed the SAT exam simulation. Redirecting to your results...');
-                    window.location.href = M.cfg.wwwroot + '/mod/sat/view.php?id=' + self.config.cmid;
-                } else if (res.nextaction === 'pause') {
-                    alert('Module submitted! Since this exam is in Paced Homework mode, your route has been locked in. You can resume Module 2 now or return later.');
-                    window.location.href = M.cfg.wwwroot + '/mod/sat/view.php?id=' + self.config.cmid;
-                } else {
-                    alert('Module 1 submitted! Proceeding to Module 2...');
-                    window.location.reload();
-                }
-            }).fail(Notification.exception);
+                promises[0].done(function(res) {
+                    if (res.nextaction === 'finish') {
+                        alert('Congratulations! You have completed the SAT exam simulation. Redirecting to your results...');
+                        window.location.href = M.cfg.wwwroot + '/mod/sat/view.php?id=' + self.config.cmid;
+                    } else if (res.nextaction === 'pause') {
+                        alert('Module submitted! Since this exam is in Paced Homework mode, your route has been locked in. You can resume Module 2 now or return later.');
+                        window.location.href = M.cfg.wwwroot + '/mod/sat/view.php?id=' + self.config.cmid;
+                    } else {
+                        alert('Module 1 submitted! Proceeding to Module 2...');
+                        window.location.reload();
+                    }
+                }).fail(Notification.exception);
+            };
+
+            if (self.sprTimer && self.pendingSprSlot) {
+                clearTimeout(self.sprTimer);
+                self.sprTimer = null;
+                var slotToFlush = self.pendingSprSlot;
+                self.pendingSprSlot = null;
+                self.persistSlotState(slotToFlush).always(doSubmit);
+            } else {
+                doSubmit();
+            }
         }
     };
 

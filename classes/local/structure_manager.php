@@ -16,6 +16,7 @@
 
 namespace mod_sat\local;
 
+use context;
 use stdClass;
 
 /**
@@ -65,6 +66,12 @@ class structure_manager {
              LEFT JOIN {question_versions} qv
                     ON qv.questionbankentryid = qbe.id
                    AND qv.status = 'ready'
+                   AND qv.version = (
+                       SELECT MAX(qv2.version)
+                         FROM {question_versions} qv2
+                        WHERE qv2.questionbankentryid = qbe.id
+                          AND qv2.status = 'ready'
+                   )
              LEFT JOIN {question} q
                     ON q.id = qv.questionid
                  WHERE s.moduleid = :moduleid
@@ -164,6 +171,128 @@ class structure_manager {
             }
             $num++;
         }
+
+        return true;
+    }
+
+    /**
+     * Retrieves available ready questions from accessible question bank contexts.
+     *
+     * @param int $contextid Module context ID
+     * @return array List of question records keyed by qbankentryid
+     */
+    public static function get_available_bank_questions(int $contextid): array {
+        global $DB;
+
+        $ctx = context::instance_by_id($contextid);
+        $contextids = $ctx->get_parent_context_ids(true);
+
+        // Include Moodle 5.2 mod_qbank module subcontexts within the same course.
+        $coursectx = $ctx->get_course_context(false);
+        if ($coursectx) {
+            $childids = $DB->get_fieldset_select(
+                'context',
+                'id',
+                'contextlevel = :level AND ' . $DB->sql_like('path', ':path'),
+                ['level' => CONTEXT_MODULE, 'path' => $DB->sql_like_escape($coursectx->path) . '/%']
+            );
+            if (!empty($childids)) {
+                $contextids = array_unique(array_merge($contextids, array_map('intval', $childids)));
+            }
+        }
+
+        if (empty($contextids)) {
+            return [];
+        }
+
+        [$insql, $params] = $DB->get_in_or_equal($contextids, SQL_PARAMS_NAMED);
+
+        $sql = "SELECT qbe.id AS qbankentryid,
+                       q.id AS questionid,
+                       q.name,
+                       q.qtype,
+                       qc.name AS categoryname
+                  FROM {question_bank_entries} qbe
+                  JOIN {question_categories} qc
+                    ON qc.id = qbe.questioncategoryid
+                  JOIN {question_versions} qv
+                    ON qv.questionbankentryid = qbe.id
+                   AND qv.status = 'ready'
+                   AND qv.version = (
+                       SELECT MAX(qv2.version)
+                         FROM {question_versions} qv2
+                        WHERE qv2.questionbankentryid = qbe.id
+                          AND qv2.status = 'ready'
+                   )
+                  JOIN {question} q
+                    ON q.id = qv.questionid
+                 WHERE qc.contextid $insql
+              ORDER BY qc.name ASC, q.name ASC";
+
+        return $DB->get_records_sql($sql, $params);
+    }
+
+    /**
+     * Moves a slot up or down within its module.
+     *
+     * @param int $slotid Slot ID
+     * @param string $direction 'up' or 'down'
+     * @return bool True if swapped
+     */
+    public static function move_slot(int $slotid, string $direction): bool {
+        global $DB;
+
+        $slot = $DB->get_record('sat_slots', ['id' => $slotid]);
+        if (!$slot) {
+            return false;
+        }
+
+        $slots = array_values($DB->get_records('sat_slots', ['moduleid' => $slot->moduleid], 'slot ASC'));
+        $targetidx = null;
+        foreach ($slots as $idx => $s) {
+            if ((int)$s->id === $slotid) {
+                $targetidx = $idx;
+                break;
+            }
+        }
+
+        if ($targetidx === null) {
+            return false;
+        }
+
+        $swapidx = ($direction === 'up') ? ($targetidx - 1) : ($targetidx + 1);
+        if (!isset($slots[$swapidx])) {
+            return false;
+        }
+
+        $current = $slots[$targetidx];
+        $neighbor = $slots[$swapidx];
+        $tempslot = $current->slot;
+        $current->slot = $neighbor->slot;
+        $neighbor->slot = $tempslot;
+
+        $DB->update_record('sat_slots', $current);
+        $DB->update_record('sat_slots', $neighbor);
+
+        return true;
+    }
+
+    /**
+     * Toggles whether a slot counts toward the score or is an unscored pretest item.
+     *
+     * @param int $slotid Slot ID
+     * @return bool True on success
+     */
+    public static function toggle_slot_scored(int $slotid): bool {
+        global $DB;
+
+        $slot = $DB->get_record('sat_slots', ['id' => $slotid]);
+        if (!$slot) {
+            return false;
+        }
+
+        $slot->is_scored = $slot->is_scored ? 0 : 1;
+        $DB->update_record('sat_slots', $slot);
 
         return true;
     }

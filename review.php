@@ -81,8 +81,128 @@ echo html_writer::end_div();
 echo html_writer::end_div();
 echo html_writer::end_div();
 
-// Question-by-question review using Question Engine.
-if (!empty($attempt->uniqueid) && class_exists('question_engine')) {
+// Question-by-question review from saved SAT slot state, with Question Engine fallback.
+$modattempts = $DB->get_records('sat_module_attempts', ['attemptid' => $attempt->id], 'id ASC');
+
+if (!empty($modattempts)) {
+    $slotstates = $DB->get_records(
+        'sat_slot_state',
+        ['attemptid' => $attempt->id],
+        '',
+        'slot, response, flagged'
+    );
+    $modules = $DB->get_records('sat_modules', ['satid' => $attempt->satid]);
+
+    echo html_writer::tag('h5', 'Question Review', ['class' => 'mb-3 fw-bold']);
+
+    foreach ($modattempts as $modattempt) {
+        $modinfo = $modules[$modattempt->moduleid] ?? null;
+        $sectionlabel = ($modinfo && $modinfo->section === 'math') ? 'Math' : 'Reading and Writing';
+        $modnum = $modinfo ? (int)$modinfo->moduleorder : 1;
+        $routelabel = ($modinfo && !empty($modinfo->difficulty) && $modinfo->difficulty !== 'routing')
+            ? ' (' . ucfirst($modinfo->difficulty) . ')'
+            : '';
+
+        echo html_writer::tag(
+            'h6',
+            s($sectionlabel . ' — Module ' . $modnum . $routelabel),
+            ['class' => 'mt-4 mb-2 text-uppercase text-muted fw-bold']
+        );
+
+        $slots = \mod_sat\local\structure_manager::get_slots((int)$modattempt->moduleid);
+        $usageslot = (int)$modattempt->firstslot;
+
+        foreach ($slots as $slot) {
+            $state = $slotstates[$usageslot] ?? null;
+            $studentresponse = $state ? trim((string)($state->response ?? '')) : '';
+            $isflagged = $state && !empty($state->flagged);
+            $earned = \mod_sat\local\attempt_manager::grade_slot_response($slot, $studentresponse);
+            $maxmark = (float)$slot->maxmark;
+            $iscorrect = ($maxmark > 0 && ($earned / $maxmark) >= 0.99);
+
+            $answers = $DB->get_records('question_answers', ['question' => $slot->questionid], 'id ASC');
+            $correcttexts = [];
+            $studentdisplay = $studentresponse;
+
+            if (empty($slot->is_spr)) {
+                $idx = 0;
+                foreach ($answers as $ans) {
+                    $letter = chr(65 + $idx);
+                    $cleanans = trim(html_to_text((string)$ans->answer, 0, false));
+                    if ((float)$ans->fraction >= 0.99) {
+                        $correcttexts[] = $letter . '. ' . $cleanans;
+                    }
+                    if ($studentresponse !== '' && strtoupper($studentresponse) === $letter) {
+                        $studentdisplay = $letter . '. ' . $cleanans;
+                    }
+                    $idx++;
+                }
+            } else {
+                foreach ($answers as $ans) {
+                    if ((float)$ans->fraction >= 0.99) {
+                        $correcttexts[] = trim(html_to_text((string)$ans->answer, 0, false));
+                    }
+                }
+            }
+
+            if ($studentdisplay === '') {
+                $studentdisplay = 'No answer submitted';
+            }
+            $correctdisplay = !empty($correcttexts) ? implode(' / ', $correcttexts) : 'N/A';
+
+            $questionrec = $DB->get_record(
+                'question',
+                ['id' => $slot->questionid],
+                'id, generalfeedback, generalfeedbackformat'
+            );
+
+            [$stimulus, $prompt] = \mod_sat\local\structure_manager::split_stimulus((string)$slot->questiontext);
+            $qformat = (int)$slot->questiontextformat;
+
+            $borderclass = $iscorrect ? 'border-success' : 'border-danger';
+            echo html_writer::start_div('sat-review-question-card card mb-3 p-3 shadow-sm border-start border-4 ' . $borderclass);
+
+            echo html_writer::start_div('d-flex justify-content-between align-items-center mb-2');
+            echo html_writer::tag('span', 'Question ' . (int)$slot->slot, ['class' => 'fw-bold']);
+            echo html_writer::start_div('d-flex gap-2 align-items-center');
+            if ($isflagged) {
+                echo html_writer::tag('span', 'Flagged', ['class' => 'badge bg-warning text-dark']);
+            }
+            $badgeclass = $iscorrect ? 'badge bg-success' : 'badge bg-danger';
+            $statustext = ($iscorrect ? 'Correct' : 'Incorrect') . ' (' . round($earned, 2) . '/' . round($maxmark, 2) . ')';
+            echo html_writer::tag('span', $statustext, ['class' => $badgeclass]);
+            echo html_writer::end_div();
+            echo html_writer::end_div();
+
+            if (trim($stimulus) !== '') {
+                echo html_writer::div(format_text($stimulus, $qformat), 'p-2 mb-2 bg-light rounded small');
+            }
+            echo html_writer::div(format_text($prompt, $qformat), 'mb-3');
+
+            echo html_writer::start_div('row g-2 small mb-2');
+            echo html_writer::div(
+                html_writer::tag('strong', 'Your Answer: ') . s($studentdisplay),
+                'col-md-6'
+            );
+            echo html_writer::div(
+                html_writer::tag('strong', 'Correct Answer: ') . s($correctdisplay),
+                'col-md-6 text-success'
+            );
+            echo html_writer::end_div();
+
+            if ($questionrec && trim((string)$questionrec->generalfeedback) !== '') {
+                echo html_writer::div(
+                    html_writer::tag('strong', 'Explanation: ', ['class' => 'd-block mb-1'])
+                    . format_text($questionrec->generalfeedback, (int)$questionrec->generalfeedbackformat),
+                    'alert alert-info mb-0 mt-2 py-2 small'
+                );
+            }
+
+            echo html_writer::end_div();
+            $usageslot++;
+        }
+    }
+} else if (!empty($attempt->uniqueid) && class_exists('question_engine')) {
     $quba = question_engine::load_questions_usage_by_activity($attempt->uniqueid);
     $slots = $quba->get_slots();
 
@@ -106,8 +226,13 @@ if (!empty($attempt->uniqueid) && class_exists('question_engine')) {
     }
 }
 
-echo html_writer::start_div('mt-4');
+echo html_writer::start_div('mt-4 d-flex gap-2');
 echo html_writer::link(new moodle_url('/mod/sat/view.php', ['id' => $cm->id]), get_string('back'), ['class' => 'btn btn-secondary px-4']);
+echo html_writer::link(
+    new moodle_url('/mod/sat/diagnostic.php', ['id' => $cm->id, 'attemptid' => $attempt->id]),
+    'View Domain Diagnostics',
+    ['class' => 'btn btn-outline-primary px-4']
+);
 echo html_writer::end_div();
 
 echo $OUTPUT->footer();

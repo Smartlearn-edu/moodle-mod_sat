@@ -132,6 +132,8 @@
         <FIELD NAME="slot" TYPE="int" LENGTH="6" NOTNULL="true" DEFAULT="1" SEQUENCE="false"/>
         <FIELD NAME="eliminated" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="JSON array of eliminated option keys"/>
         <FIELD NAME="annotations" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="JSON array of text highlights and notes"/>
+        <FIELD NAME="response" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Student answer response"/>
+        <FIELD NAME="flagged" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Marked for review flag"/>
         <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
       </FIELDS>
       <KEYS>

@@ -72,19 +72,8 @@ class attempt_api extends external_api {
             throw new moodle_exception('nopermissions', 'error');
         }
 
-        // Fetch active module attempt.
-        $modattempt = $DB->get_record_select(
-            'sat_module_attempts',
-            'attemptid = :attemptid AND state = :state',
-            ['attemptid' => $attempt->id, 'state' => attempt_manager::STATE_INPROGRESS],
-            '*',
-            IGNORE_MULTIPLE
-        );
-
-        if (!$modattempt) {
-            $modattempt = $DB->get_record('sat_module_attempts', ['attemptid' => $attempt->id], '*', IGNORE_MULTIPLE);
-        }
-
+        // Fetch active or resume paused module attempt.
+        $modattempt = attempt_manager::get_or_resume_active_module($sat, $attempt);
         $module = $DB->get_record('sat_modules', ['id' => $modattempt->moduleid], '*', MUST_EXIST);
 
         // Server-authoritative remaining time.
@@ -94,27 +83,55 @@ class attempt_api extends external_api {
         // Load questions in this module.
         $slots = structure_manager::get_slots($module->id);
         $formattedslots = [];
+        $letters = ['A', 'B', 'C', 'D', 'E', 'F'];
+        $usageslot = ((int)$modattempt->firstslot > 0) ? (int)$modattempt->firstslot : 1;
 
         foreach ($slots as $s) {
             $rawtext = $s->questiontext ?? '';
             [$stimulus, $prompt] = structure_manager::split_stimulus($rawtext);
 
+            $options = [];
+            $isspr = (bool)$s->is_spr || in_array($s->qtype ?? '', ['shortanswer', 'numerical'], true);
+            if (!$isspr && !empty($s->questionid)) {
+                $answers = array_values($DB->get_records(
+                    'question_answers',
+                    ['question' => $s->questionid],
+                    'id ASC'
+                ));
+                foreach ($answers as $aidx => $ans) {
+                    if (!isset($letters[$aidx])) {
+                        break;
+                    }
+                    $options[] = [
+                        'key' => $letters[$aidx],
+                        'text' => format_text($ans->answer, $ans->answerformat ?? FORMAT_HTML, ['context' => $context]),
+                    ];
+                }
+            }
+
             $formattedslots[] = [
-                'slot' => (int)$s->slot,
+                'slot' => $usageslot,
                 'maxmark' => (float)$s->maxmark,
                 'is_scored' => (bool)$s->is_scored,
-                'is_spr' => (bool)$s->is_spr,
+                'is_spr' => $isspr,
                 'stimulus' => format_text($stimulus, FORMAT_HTML, ['context' => $context]),
                 'prompt' => format_text($prompt, FORMAT_HTML, ['context' => $context]),
+                'options' => $options,
             ];
+
+            if (!empty($s->questionid)) {
+                $usageslot++;
+            }
         }
 
-        // Load slot states (eliminations, annotations).
+        // Load slot states (responses, flags, eliminations, annotations).
         $states = $DB->get_records('sat_slot_state', ['attemptid' => $attempt->id]);
         $formattedstates = [];
         foreach ($states as $st) {
             $formattedstates[] = [
                 'slot' => (int)$st->slot,
+                'response' => (string)($st->response ?? ''),
+                'flagged' => !empty($st->flagged),
                 'eliminated' => $st->eliminated ?? '[]',
                 'annotations' => $st->annotations ?? '[]',
             ];
@@ -155,11 +172,21 @@ class attempt_api extends external_api {
                     'is_spr' => new external_value(PARAM_BOOL, 'Is SPR'),
                     'stimulus' => new external_value(PARAM_RAW, 'Stimulus HTML'),
                     'prompt' => new external_value(PARAM_RAW, 'Prompt HTML'),
+                    'options' => new external_multiple_structure(
+                        new external_single_structure([
+                            'key' => new external_value(PARAM_ALPHA, 'Option letter key'),
+                            'text' => new external_value(PARAM_RAW, 'Option answer HTML'),
+                        ]),
+                        'MCQ answer choices',
+                        VALUE_OPTIONAL
+                    ),
                 ])
             ),
             'slot_states' => new external_multiple_structure(
                 new external_single_structure([
                     'slot' => new external_value(PARAM_INT, 'Slot index'),
+                    'response' => new external_value(PARAM_RAW, 'Student answer response', VALUE_OPTIONAL),
+                    'flagged' => new external_value(PARAM_BOOL, 'Marked for review flag', VALUE_OPTIONAL),
                     'eliminated' => new external_value(PARAM_RAW, 'Eliminated choices JSON'),
                     'annotations' => new external_value(PARAM_RAW, 'Annotations JSON'),
                 ])
@@ -178,23 +205,29 @@ class attempt_api extends external_api {
             'slot' => new external_value(PARAM_INT, 'Slot number'),
             'eliminated' => new external_value(PARAM_RAW, 'Eliminated keys JSON', VALUE_DEFAULT, '[]'),
             'annotations' => new external_value(PARAM_RAW, 'Annotations JSON', VALUE_DEFAULT, '[]'),
+            'response' => new external_value(PARAM_RAW, 'Student answer response', VALUE_DEFAULT, ''),
+            'flagged' => new external_value(PARAM_INT, 'Marked for review flag (0 or 1)', VALUE_DEFAULT, 0),
         ]);
     }
 
     /**
-     * Saves user's strike-throughs and highlight annotations for a question slot.
+     * Saves user's answer response, review flag, strike-throughs, and highlight annotations.
      *
      * @param int $attemptid Attempt ID
      * @param int $slot Slot number
      * @param string $eliminated JSON array of eliminated keys
      * @param string $annotations JSON array of annotations
+     * @param string $response Student response
+     * @param int $flagged Marked for review flag
      * @return array
      */
     public static function save_slot_state(
         int $attemptid,
         int $slot,
         string $eliminated = '[]',
-        string $annotations = '[]'
+        string $annotations = '[]',
+        string $response = '',
+        int $flagged = 0
     ): array {
         global $DB, $USER;
 
@@ -203,6 +236,8 @@ class attempt_api extends external_api {
             'slot' => $slot,
             'eliminated' => $eliminated,
             'annotations' => $annotations,
+            'response' => $response,
+            'flagged' => $flagged,
         ]);
 
         $attempt = $DB->get_record('sat_attempts', ['id' => $params['attemptid']], '*', MUST_EXIST);
@@ -228,11 +263,15 @@ class attempt_api extends external_api {
             $record->slot = $params['slot'];
             $record->eliminated = $params['eliminated'];
             $record->annotations = $params['annotations'];
+            $record->response = $params['response'];
+            $record->flagged = $params['flagged'] ? 1 : 0;
             $record->timemodified = $now;
             $DB->insert_record('sat_slot_state', $record);
         } else {
             $record->eliminated = $params['eliminated'];
             $record->annotations = $params['annotations'];
+            $record->response = $params['response'];
+            $record->flagged = $params['flagged'] ? 1 : 0;
             $record->timemodified = $now;
             $DB->update_record('sat_slot_state', $record);
         }

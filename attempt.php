@@ -68,23 +68,8 @@ if (!$activeattempt) {
         (bool)$preview
     );
 } else {
-    // Fetch active module attempt.
-    $activemodattempt = $DB->get_record_select(
-        'sat_module_attempts',
-        'attemptid = :attemptid AND state = :inprogress',
-        ['attemptid' => $activeattempt->id, 'inprogress' => \mod_sat\local\attempt_manager::STATE_INPROGRESS],
-        '*',
-        IGNORE_MULTIPLE
-    );
-
-    if (!$activemodattempt) {
-        $activemodattempt = $DB->get_record(
-            'sat_module_attempts',
-            ['attemptid' => $activeattempt->id],
-            '*',
-            IGNORE_MULTIPLE
-        );
-    }
+    // Fetch or resume active module attempt (supports Paced Mode resume).
+    $activemodattempt = \mod_sat\local\attempt_manager::get_or_resume_active_module($sat, $activeattempt);
 }
 
 // Minimal, distraction-free page layout.

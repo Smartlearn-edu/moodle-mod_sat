@@ -72,6 +72,21 @@ define(['jquery'], function($) {
             self.setupDraggable();
         },
 
+        normalizeExpression: function(raw) {
+            return String(raw)
+                .replace(/(\d)(x|sin|cos|tan|sqrt|log|ln|pi|\()/gi, '$1*$2')
+                .replace(/(\))(\d|x|sin|cos|tan|sqrt|log|ln|pi|\()/gi, '$1*$2')
+                .replace(/sin/g, 'Math.sin')
+                .replace(/cos/g, 'Math.cos')
+                .replace(/tan/g, 'Math.tan')
+                .replace(/sqrt/g, 'Math.sqrt')
+                .replace(/log/g, 'Math.log10')
+                .replace(/ln/g, 'Math.log')
+                .replace(/pi/g, 'Math.PI')
+                .replace(/\be\b/g, 'Math.E')
+                .replace(/\^/g, '**');
+        },
+
         handleButton: function(val) {
             var screen = $('#sat-calc-screen');
 
@@ -85,17 +100,8 @@ define(['jquery'], function($) {
                 }
             } else if (val === '=') {
                 try {
-                    // Safe basic arithmetic evaluation.
-                    var expr = this.currentExpression
-                        .replace(/sin/g, 'Math.sin')
-                        .replace(/cos/g, 'Math.cos')
-                        .replace(/tan/g, 'Math.tan')
-                        .replace(/sqrt/g, 'Math.sqrt')
-                        .replace(/log/g, 'Math.log10')
-                        .replace(/ln/g, 'Math.log')
-                        .replace(/pi/g, 'Math.PI')
-                        .replace(/e/g, 'Math.E')
-                        .replace(/\^/g, '**');
+                    // Safe basic arithmetic evaluation with implicit multiplication support.
+                    var expr = this.normalizeExpression(this.currentExpression);
 
                     /* eslint-disable no-eval */
                     var result = eval(expr);
@@ -167,12 +173,7 @@ define(['jquery'], function($) {
 
             // Parse and plot function y = f(x).
             var rawFn = $('#sat-graph-function').val() || 'x^2 - 4';
-            var jsFn = rawFn
-                .replace(/sin/g, 'Math.sin')
-                .replace(/cos/g, 'Math.cos')
-                .replace(/tan/g, 'Math.tan')
-                .replace(/sqrt/g, 'Math.sqrt')
-                .replace(/\^/g, '**');
+            var jsFn = this.normalizeExpression(rawFn);
 
             ctx.strokeStyle = '#2563eb';
             ctx.lineWidth = 2.5;

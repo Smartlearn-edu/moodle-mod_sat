@@ -33,6 +33,24 @@ defined('MOODLE_INTERNAL') || die();
 function xmldb_sat_upgrade($oldversion) {
     global $DB;
 
+    $dbman = $DB->get_manager();
+
+    if ($oldversion < 2026042011) {
+        $table = new xmldb_table('sat_slot_state');
+
+        $responsefield = new xmldb_field('response', XMLDB_TYPE_TEXT, null, null, null, null, null, 'annotations');
+        if (!$dbman->field_exists($table, $responsefield)) {
+            $dbman->add_field($table, $responsefield);
+        }
+
+        $flaggedfield = new xmldb_field('flagged', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0', 'response');
+        if (!$dbman->field_exists($table, $flaggedfield)) {
+            $dbman->add_field($table, $flaggedfield);
+        }
+
+        upgrade_mod_savepoint(true, 2026042011, 'sat');
+    }
+
     // Upgrades will automatically update capabilities from db/access.php.
     return true;
 }

@@ -255,4 +255,16 @@ class spr_helper {
 
         return false;
     }
+
+    /**
+     * Checks if a student's response is mathematically equivalent to a single canonical answer.
+     *
+     * @param string $studentresponse Student's input
+     * @param string $canonical Single canonical answer string from question_answers
+     * @return bool True if response is valid and equivalent under SAT SPR rules
+     */
+    public static function is_equivalent(string $studentresponse, string $canonical): bool {
+        $clean = trim(strip_tags($canonical));
+        return self::is_correct($studentresponse, [$clean]);
+    }
 }

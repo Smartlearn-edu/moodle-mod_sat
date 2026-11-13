@@ -67,9 +67,9 @@ class scorer {
         // Hardcoded math fallback if database table not yet populated.
         if (empty($records)) {
             if ($normalizedroute === 'hard') {
-                return (int) round(460 + ($clampedpct * 3.4));
+                return self::round_to_ten(460 + ($clampedpct * 3.4));
             }
-            return (int) round(200 + ($clampedpct * 3.9));
+            return self::round_to_ten(200 + ($clampedpct * 3.9));
         }
 
         // Linear interpolation between the two nearest raw percentage data points.
@@ -86,21 +86,31 @@ class scorer {
         }
 
         if ($prev === null && $next !== null) {
-            return (int)$next->scaledscore;
+            return self::round_to_ten((float)$next->scaledscore);
         }
         if ($next === null && $prev !== null) {
-            return (int)$prev->scaledscore;
+            return self::round_to_ten((float)$prev->scaledscore);
         }
         if ($prev !== null && $next !== null) {
             if ($prev->rawpercent == $next->rawpercent) {
-                return (int)$prev->scaledscore;
+                return self::round_to_ten((float)$prev->scaledscore);
             }
             $factor = ($clampedpct - $prev->rawpercent) / ($next->rawpercent - $prev->rawpercent);
             $scaled = $prev->scaledscore + ($factor * ($next->scaledscore - $prev->scaledscore));
-            return (int) max(200, min(800, round($scaled)));
+            return self::round_to_ten((float)$scaled);
         }
 
         return 200;
+    }
+
+    /**
+     * Rounds a raw scaled score to the official College Board 10-point increment within [200, 800].
+     *
+     * @param float $score Unrounded scaled score
+     * @return int Rounded section score (200..800 in increments of 10)
+     */
+    private static function round_to_ten(float $score): int {
+        return (int) max(200, min(800, round($score / 10) * 10));
     }
 
     /**
@@ -158,12 +168,34 @@ class scorer {
             $DB->insert_record('sat_grades', $record);
         } else {
             // Apply grading method (Highest, Average, First, Last).
-            $newgrade = match ((int)$sat->grademethod) {
-                SAT_GRADEHIGHEST => max((float)$record->grade, (float)$totalscaled),
-                SAT_GRADEAVERAGE => round(((float)$record->grade + (float)$totalscaled) / 2.0, 2),
-                SAT_ATTEMPTFIRST => (float)$record->grade,
-                default => (float)$totalscaled, // SAT_ATTEMPTLAST.
-            };
+            if ((int)$sat->grademethod === SAT_GRADEAVERAGE) {
+                $finishedattempts = $DB->get_records('sat_attempts', [
+                    'satid' => $sat->id,
+                    'userid' => $userid,
+                    'state' => 'finished',
+                ]);
+                $hasinprogress = $DB->record_exists('sat_attempts', [
+                    'satid' => $sat->id,
+                    'userid' => $userid,
+                    'state' => 'inprogress',
+                ]);
+                $scores = [];
+                foreach ($finishedattempts as $att) {
+                    if ($att->scaled_total !== null) {
+                        $scores[] = (float)$att->scaled_total;
+                    }
+                }
+                if ($hasinprogress || empty($scores)) {
+                    $scores[] = (float)$totalscaled;
+                }
+                $newgrade = round(array_sum($scores) / count($scores), 2);
+            } else {
+                $newgrade = match ((int)$sat->grademethod) {
+                    SAT_GRADEHIGHEST => max((float)$record->grade, (float)$totalscaled),
+                    SAT_ATTEMPTFIRST => (float)$record->grade,
+                    default => (float)$totalscaled, // SAT_ATTEMPTLAST.
+                };
+            }
 
             $record->grade = $newgrade;
             $record->scaled_rw = $scaledrw;

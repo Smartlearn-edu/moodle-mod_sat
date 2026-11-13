@@ -91,56 +91,46 @@ class diagnostic_manager {
 
         $results = [];
 
-        if (empty($attempt->uniqueid) || !class_exists('question_engine')) {
-            return $results;
-        }
-
-        $quba = question_engine::load_questions_usage_by_activity($attempt->uniqueid);
-        $slots = $quba->get_slots();
-
-        foreach ($slots as $slotnum) {
-            $question = $quba->get_question($slotnum);
-            if (!$question) {
-                continue;
-            }
-
-            $mark = (float)$quba->get_question_mark($slotnum);
-            $maxmark = (float)$quba->get_question_max_mark($slotnum);
-            $iscorrect = ($maxmark > 0 && ($mark / $maxmark) >= 0.99);
-
-            // Fetch question tags.
-            $tags = $DB->get_records_sql(
-                "SELECT t.id, t.rawname
-                   FROM {tag} t
-                   JOIN {tag_instance} ti ON ti.tagid = t.id
-                  WHERE ti.component = 'core_question'
-                    AND ti.itemtype = 'question'
-                    AND ti.itemid = :qid",
-                ['qid' => $question->id]
+        $modattempts = $DB->get_records('sat_module_attempts', ['attemptid' => $attempt->id], 'id ASC');
+        if (!empty($modattempts)) {
+            $slotstates = $DB->get_records(
+                'sat_slot_state',
+                ['attemptid' => $attempt->id],
+                '',
+                'slot, response, flagged'
             );
 
-            $domain = 'sat_domain:general';
-            foreach ($tags as $t) {
-                if (str_starts_with($t->rawname, 'sat_domain:')) {
-                    $domain = $t->rawname;
-                    break;
+            foreach ($modattempts as $modattempt) {
+                $slots = structure_manager::get_slots((int)$modattempt->moduleid);
+                $usageslot = (int)$modattempt->firstslot;
+
+                foreach ($slots as $slot) {
+                    $studentresponse = isset($slotstates[$usageslot])
+                        ? (string)($slotstates[$usageslot]->response ?? '')
+                        : '';
+                    $earned = attempt_manager::grade_slot_response($slot, $studentresponse);
+                    $maxmark = (float)$slot->maxmark;
+                    $iscorrect = ($maxmark > 0 && ($earned / $maxmark) >= 0.99);
+
+                    self::accumulate_question_domain($results, (int)$slot->questionid, $iscorrect);
+                    $usageslot++;
                 }
             }
+        } else if (!empty($attempt->uniqueid) && class_exists('question_engine')) {
+            $quba = question_engine::load_questions_usage_by_activity($attempt->uniqueid);
+            $slots = $quba->get_slots();
 
-            if (!isset($results[$domain])) {
-                $results[$domain] = [
-                    'key' => $domain,
-                    'label' => self::get_domain_label($domain),
-                    'total' => 0,
-                    'correct' => 0,
-                    'percent' => 0,
-                    'status' => 'developing',
-                ];
-            }
+            foreach ($slots as $slotnum) {
+                $question = $quba->get_question($slotnum);
+                if (!$question) {
+                    continue;
+                }
 
-            $results[$domain]['total']++;
-            if ($iscorrect) {
-                $results[$domain]['correct']++;
+                $mark = (float)$quba->get_question_mark($slotnum);
+                $maxmark = (float)$quba->get_question_max_mark($slotnum);
+                $iscorrect = ($maxmark > 0 && ($mark / $maxmark) >= 0.99);
+
+                self::accumulate_question_domain($results, (int)$question->id, $iscorrect);
             }
         }
 
@@ -159,6 +149,55 @@ class diagnostic_manager {
         }
 
         return $results;
+    }
+
+    /**
+     * Looks up the SAT domain tag for a question and increments domain totals.
+     *
+     * @param array $results Domain breakdown accumulator passed by reference
+     * @param int $questionid Question ID
+     * @param bool $iscorrect Whether the student answered the question correctly
+     */
+    private static function accumulate_question_domain(array &$results, int $questionid, bool $iscorrect): void {
+        global $DB;
+
+        if ($questionid <= 0) {
+            return;
+        }
+
+        $tags = $DB->get_records_sql(
+            "SELECT t.id, t.rawname
+               FROM {tag} t
+               JOIN {tag_instance} ti ON ti.tagid = t.id
+              WHERE ti.component = 'core_question'
+                AND ti.itemtype = 'question'
+                AND ti.itemid = :qid",
+            ['qid' => $questionid]
+        );
+
+        $domain = 'sat_domain:general';
+        foreach ($tags as $t) {
+            if (str_starts_with($t->rawname, 'sat_domain:')) {
+                $domain = $t->rawname;
+                break;
+            }
+        }
+
+        if (!isset($results[$domain])) {
+            $results[$domain] = [
+                'key' => $domain,
+                'label' => self::get_domain_label($domain),
+                'total' => 0,
+                'correct' => 0,
+                'percent' => 0,
+                'status' => 'developing',
+            ];
+        }
+
+        $results[$domain]['total']++;
+        if ($iscorrect) {
+            $results[$domain]['correct']++;
+        }
     }
 
     /**

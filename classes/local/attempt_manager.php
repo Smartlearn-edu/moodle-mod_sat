@@ -161,6 +161,122 @@ class attempt_manager {
     }
 
     /**
+     * Retrieves the active module attempt, or resumes a paused module attempt in Paced Mode.
+     *
+     * @param stdClass $sat SAT instance
+     * @param stdClass $attempt Active attempt record (passed by reference if updated)
+     * @return stdClass|null Active or resumed module attempt
+     */
+    public static function get_or_resume_active_module(stdClass $sat, stdClass $attempt): ?stdClass {
+        global $DB;
+
+        $modattempt = $DB->get_record_select(
+            'sat_module_attempts',
+            'attemptid = :attemptid AND state = :inprogress',
+            ['attemptid' => $attempt->id, 'inprogress' => self::STATE_INPROGRESS],
+            '*',
+            IGNORE_MULTIPLE
+        );
+
+        if ($modattempt) {
+            return $modattempt;
+        }
+
+        // Check for a paused module waiting to be resumed in Paced Mode.
+        $pausedmod = $DB->get_record_select(
+            'sat_module_attempts',
+            'attemptid = :attemptid AND state = :paused',
+            ['attemptid' => $attempt->id, 'paused' => self::STATE_PAUSED],
+            '*',
+            IGNORE_MULTIPLE
+        );
+
+        if ($pausedmod) {
+            $module = $DB->get_record('sat_modules', ['id' => $pausedmod->moduleid]);
+            $override = $DB->get_record('sat_overrides', ['satid' => $sat->id, 'userid' => $attempt->userid]);
+            $multiplier = ($override && $override->timemultiplier > 0) ? (float)$override->timemultiplier : 1.0;
+            $baselimit = $module ? (int)$module->timelimit : 1920;
+            $timelimit = (int) round($baselimit * $multiplier);
+
+            $now = time();
+            $pausedmod->state = self::STATE_INPROGRESS;
+            $pausedmod->timestart = $now;
+            $pausedmod->timedeadline = $now + $timelimit;
+            $DB->update_record('sat_module_attempts', $pausedmod);
+
+            if ($attempt->state === self::STATE_PAUSED) {
+                $attempt->state = self::STATE_INPROGRESS;
+                $attempt->timemodified = $now;
+                $DB->update_record('sat_attempts', $attempt);
+            }
+
+            return $pausedmod;
+        }
+
+        // Fallback to latest module attempt.
+        $records = $DB->get_records('sat_module_attempts', ['attemptid' => $attempt->id], 'id DESC', '*', 0, 1);
+        return $records ? reset($records) : null;
+    }
+
+    /**
+     * Grades a student response for a slot against Moodle question_answers and SAT SPR rules.
+     *
+     * @param stdClass $slot Slot object with questionid, qtype, is_spr, and maxmark
+     * @param string $studentresponse Student response string
+     * @return float Earned mark
+     */
+    public static function grade_slot_response(stdClass $slot, string $studentresponse): float {
+        global $DB;
+
+        $trimmed = trim($studentresponse);
+        if ($trimmed === '' || empty($slot->questionid)) {
+            return 0.0;
+        }
+
+        $answers = array_values($DB->get_records(
+            'question_answers',
+            ['question' => $slot->questionid],
+            'id ASC'
+        ));
+
+        if (empty($answers)) {
+            return 0.0;
+        }
+
+        $maxmark = (float)($slot->maxmark ?? 1.0);
+        $qtype = $slot->qtype ?? '';
+        $isspr = !empty($slot->is_spr) || in_array($qtype, ['shortanswer', 'numerical'], true);
+
+        if ($isspr) {
+            foreach ($answers as $ans) {
+                if ((float)$ans->fraction > 0 && spr_helper::is_equivalent($trimmed, (string)$ans->answer)) {
+                    return $maxmark * (float)$ans->fraction;
+                }
+            }
+            return 0.0;
+        }
+
+        // Multiple choice: map letter keys A..F to ordered answers.
+        $letters = ['A', 'B', 'C', 'D', 'E', 'F'];
+        $upper = strtoupper($trimmed);
+        $letteridx = array_search($upper, $letters, true);
+
+        if ($letteridx !== false && isset($answers[$letteridx])) {
+            $chosen = $answers[$letteridx];
+            return ((float)$chosen->fraction > 0) ? ($maxmark * (float)$chosen->fraction) : 0.0;
+        }
+
+        // Fallback match by answer ID or stripped answer text.
+        foreach ($answers as $ans) {
+            if ((string)$ans->id === $trimmed || trim(strip_tags((string)$ans->answer)) === $trimmed) {
+                return ((float)$ans->fraction > 0) ? ($maxmark * (float)$ans->fraction) : 0.0;
+            }
+        }
+
+        return 0.0;
+    }
+
+    /**
      * Submits an active module attempt and handles adaptive routing or transitions.
      *
      * @param int $attemptid Overall attempt ID
@@ -184,20 +300,26 @@ class attempt_manager {
         $quba->finish_all_questions($now);
         question_engine::save_questions_usage_by_activity($quba);
 
+        // Load persisted student responses keyed by global usage slot.
+        $slotstates = $DB->get_records('sat_slot_state', ['attemptid' => $attempt->id], '', 'slot, id, response');
+
         // Calculate raw points for this module.
         $slots = structure_manager::get_slots($module->id);
         $rawearned = 0.0;
         $maxearned = 0.0;
 
-        $usageslot = $modattempt->firstslot;
+        $usageslot = ((int)$modattempt->firstslot > 0) ? (int)$modattempt->firstslot : 1;
         foreach ($slots as $s) {
+            $state = $slotstates[$usageslot] ?? null;
+            $studentresponse = $state ? (string)($state->response ?? '') : '';
+
             if ($s->is_scored) {
                 $maxearned += (float)$s->maxmark;
-                if ($usageslot <= $modattempt->lastslot) {
-                    $rawearned += (float)$quba->get_question_mark($usageslot);
-                }
+                $rawearned += self::grade_slot_response($s, $studentresponse);
             }
-            $usageslot++;
+            if (!empty($s->questionid)) {
+                $usageslot++;
+            }
         }
 
         $modattempt->rawscore = $rawearned;
@@ -361,6 +483,7 @@ class attempt_manager {
         if ($totalrwmax > 0.0) {
             $pctrw = ($totalrwearned / $totalrwmax) * 100.0;
             $scaledrw = scorer::calculate_section_scaled_score($sat->id, 'rw', $attempt->route_rw, $pctrw);
+            $attempt->raw_rw = (int)round($totalrwearned);
             $attempt->scaled_rw = $scaledrw;
         }
 
@@ -368,6 +491,7 @@ class attempt_manager {
         if ($totalmathmax > 0.0) {
             $pctmath = ($totalmathearned / $totalmathmax) * 100.0;
             $scaledmath = scorer::calculate_section_scaled_score($sat->id, 'math', $attempt->route_math, $pctmath);
+            $attempt->raw_math = (int)round($totalmathearned);
             $attempt->scaled_math = $scaledmath;
         }
 

@@ -68,6 +68,8 @@ class provider implements
                 'slot' => 'privacy:metadata:sat_slot_state:slot',
                 'eliminated' => 'privacy:metadata:sat_slot_state:eliminated',
                 'annotations' => 'privacy:metadata:sat_slot_state:annotations',
+                'response' => 'privacy:metadata:sat_slot_state:response',
+                'flagged' => 'privacy:metadata:sat_slot_state:flagged',
             ],
             'privacy:metadata:sat_slot_state'
         );
