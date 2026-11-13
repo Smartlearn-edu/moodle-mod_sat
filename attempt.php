@@ -117,8 +117,9 @@ echo $OUTPUT->header();
             <button id="sat-btn-formulas" class="btn btn-sm btn-outline-warning d-flex align-items-center gap-1" title="Math Reference Sheet">
                 <i class="fa fa-book"></i> Formulas
             </button>
-            <button id="sat-btn-annotate" class="btn btn-sm btn-outline-success d-flex align-items-center gap-1" title="Highlighter and Notes">
-                <i class="fa fa-pencil"></i> Annotate
+            <button id="sat-btn-annotate" type="button" class="btn btn-sm btn-outline-success d-flex align-items-center gap-1" title="Highlighter and Notes">
+                <i class="fa fa-pencil"></i> <span>Annotate</span>
+                <span id="sat-annotate-count" class="badge bg-success text-white d-none">0</span>
             </button>
             <button id="sat-btn-top-submit" class="btn btn-sm btn-warning d-flex align-items-center gap-1 fw-bold text-dark" title="Review questions and submit this module">
                 <i class="fa fa-check-circle"></i> Submit Module
@@ -202,7 +203,9 @@ echo $OUTPUT->header();
     <div id="sat-matrix-drawer" class="sat-matrix-drawer position-absolute bottom-0 start-50 translate-middle-x bg-white text-dark p-4 rounded-top shadow-lg border d-none" style="z-index: 1050; width: 650px; max-height: 400px; overflow-y: auto;">
         <div class="d-flex justify-content-between align-items-center mb-3 border-bottom pb-2">
             <h6 class="mb-0 fw-bold">Question Navigation Matrix</h6>
-            <button id="sat-btn-drawer-close" class="btn btn-sm btn-close"></button>
+            <button id="sat-btn-drawer-close" type="button" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center" aria-label="Close">
+                <i class="fa fa-times" aria-hidden="true"></i>
+            </button>
         </div>
         <div id="sat-matrix-grid" class="d-flex flex-wrap gap-2 justify-content-center">
             <!-- Question buttons (1..27) injected via JavaScript -->
@@ -224,9 +227,11 @@ echo $OUTPUT->header();
     <div id="sat-calculator-panel" class="sat-floating-modal card shadow-lg position-absolute d-none" style="width: 440px; top: 70px; right: 20px; z-index: 1060;">
         <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center py-2" id="sat-calc-drag-handle" style="cursor: move;">
             <span class="small fw-bold"><i class="fa fa-calculator me-1"></i> Calculator</span>
-            <div class="d-flex gap-1">
-                <button id="sat-calc-mode-toggle" class="btn btn-xs btn-outline-light py-0 px-2" style="font-size: 11px;">Graph</button>
-                <button id="sat-calc-close" class="btn-close btn-close-white btn-sm"></button>
+            <div class="d-flex gap-1 align-items-center">
+                <button id="sat-calc-mode-toggle" type="button" class="btn btn-xs btn-outline-light py-0 px-2" style="font-size: 11px;">Graph</button>
+                <button id="sat-calc-close" type="button" class="btn btn-sm btn-outline-light py-0 px-2" aria-label="Close Calculator">
+                    <i class="fa fa-times" aria-hidden="true"></i>
+                </button>
             </div>
         </div>
         <div class="card-body p-2">
@@ -283,13 +288,75 @@ echo $OUTPUT->header();
         </div>
     </div>
 
+    <!-- Draggable Highlighter & Notes (Annotate) Panel -->
+    <div id="sat-annotate-panel" class="sat-floating-modal card shadow-lg position-absolute d-none" style="width: 340px; max-width: calc(100vw - 24px); top: 68px; right: 20px; z-index: 1055;">
+        <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center py-2" id="sat-annotate-drag-handle" style="cursor: move;">
+            <span class="small fw-bold"><i class="fa fa-pencil me-1"></i> Highlighter &amp; Notes</span>
+            <button id="sat-annotate-close" type="button" class="btn btn-sm btn-outline-light py-0 px-2" aria-label="Close Annotate Panel">
+                <i class="fa fa-times" aria-hidden="true"></i>
+            </button>
+        </div>
+        <div class="card-body p-3">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="small fw-semibold">Highlight Color:</span>
+                <div class="d-flex gap-2 align-items-center">
+                    <button type="button" class="sat-hl-swatch active" data-color="yellow" title="Yellow highlight" aria-label="Yellow highlight"></button>
+                    <button type="button" class="sat-hl-swatch" data-color="blue" title="Blue highlight" aria-label="Blue highlight"></button>
+                    <button type="button" class="sat-hl-swatch" data-color="pink" title="Pink highlight" aria-label="Pink highlight"></button>
+                </div>
+            </div>
+            <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+                <small class="text-muted lh-sm">Select text in the passage or question to highlight.</small>
+                <button id="sat-btn-hl-selection" type="button" class="btn btn-xs btn-outline-primary text-nowrap">Highlight</button>
+            </div>
+            <hr class="my-2">
+            <label for="sat-note-input" class="form-label small fw-semibold mb-1">Question Note / Scratchpad:</label>
+            <textarea id="sat-note-input" class="form-control form-control-sm mb-2" rows="2" placeholder="Write a note for this question..."></textarea>
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <button id="sat-note-save" type="button" class="btn btn-sm btn-success">
+                    <i class="fa fa-plus me-1"></i> Save Note
+                </button>
+                <button id="sat-annotate-clear" type="button" class="btn btn-sm btn-outline-danger">Clear All</button>
+            </div>
+            <div id="sat-annotations-list" class="sat-annotations-list d-flex flex-column gap-2 mt-2" style="max-height: 180px; overflow-y: auto;">
+                <!-- Saved highlights & notes for current question injected via JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Accessibility & Display Options Popover -->
+    <div id="sat-options-panel" class="sat-floating-modal card shadow-lg position-absolute d-none" style="width: 280px; top: 68px; right: 20px; z-index: 1055;">
+        <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center py-2">
+            <span class="small fw-bold"><i class="fa fa-cog me-1"></i> Display &amp; Accessibility</span>
+            <button id="sat-options-close" type="button" class="btn btn-sm btn-outline-light py-0 px-2" aria-label="Close Options">
+                <i class="fa fa-times" aria-hidden="true"></i>
+            </button>
+        </div>
+        <div class="card-body p-3">
+            <div class="mb-3">
+                <div class="small fw-semibold mb-1">Text Size</div>
+                <div class="btn-group btn-group-sm w-100" role="group" aria-label="Text size">
+                    <button type="button" class="btn btn-outline-secondary sat-font-btn active" data-size="normal">Normal</button>
+                    <button type="button" class="btn btn-outline-secondary sat-font-btn" data-size="lg">Large</button>
+                    <button type="button" class="btn btn-outline-secondary sat-font-btn" data-size="xl">XL</button>
+                </div>
+            </div>
+            <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="sat-toggle-contrast">
+                <label class="form-check-label small fw-semibold" for="sat-toggle-contrast">High Contrast Mode</label>
+            </div>
+        </div>
+    </div>
+
     <!-- Math Formula Reference Sheet Modal -->
-    <div id="sat-formulas-modal" class="modal fade" tabindex="-1">
+    <div id="sat-formulas-modal" class="modal fade" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="sat-formulas-title">
         <div class="modal-dialog modal-lg modal-dialog-scrollable">
             <div class="modal-content">
-                <div class="modal-header bg-dark text-white py-2">
-                    <h5 class="modal-title fs-6"><i class="fa fa-book me-2"></i> Standard SAT Math Reference Formulas</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                <div class="modal-header py-2 d-flex justify-content-between align-items-center">
+                    <h5 id="sat-formulas-title" class="modal-title fs-6 fw-bold mb-0"><i class="fa fa-book me-2"></i> Standard SAT Math Reference Formulas</h5>
+                    <button type="button" id="sat-formulas-close" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1" data-bs-dismiss="modal" data-dismiss="modal" aria-label="Close Formulas">
+                        <i class="fa fa-times" aria-hidden="true"></i> <span>Close</span>
+                    </button>
                 </div>
                 <div class="modal-body p-4">
                     <div class="row g-4 text-center">
@@ -332,9 +399,12 @@ echo $OUTPUT->header();
                             <small class="text-muted">a² + b² = c²</small>
                         </div>
                     </div>
-                    <div class="alert alert-secondary mt-4 py-2 small">
+                    <div class="alert alert-secondary mt-4 py-2 small mb-0">
                         <strong>Facts:</strong> The number of degrees of arc in a circle is 360. The number of radians of arc in a circle is 2π. The sum of the measures in degrees of the angles of a triangle is 180.
                     </div>
+                </div>
+                <div class="modal-footer py-2">
+                    <button type="button" id="sat-formulas-footer-close" class="btn btn-secondary btn-sm px-3" data-bs-dismiss="modal" data-dismiss="modal">Close</button>
                 </div>
             </div>
         </div>

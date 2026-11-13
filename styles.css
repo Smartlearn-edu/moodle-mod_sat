@@ -142,3 +142,104 @@
     font-weight: 600;
     padding: 8px 0;
 }
+
+/* Formulas modal backdrop fallback */
+.path-mod-sat #sat-formulas-modal.show.d-block {
+    background-color: rgba(15, 23, 42, 0.55);
+    overflow-y: auto;
+    z-index: 1070;
+}
+
+/* Annotate highlighter & notes */
+.path-mod-sat .sat-hl-swatch {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 2px solid #cbd5e1;
+    cursor: pointer;
+    padding: 0;
+    transition: transform 0.12s ease, border-color 0.12s ease;
+}
+
+.path-mod-sat .sat-hl-swatch[data-color="yellow"] {
+    background-color: #fef08a;
+}
+
+.path-mod-sat .sat-hl-swatch[data-color="blue"] {
+    background-color: #bae6fd;
+}
+
+.path-mod-sat .sat-hl-swatch[data-color="pink"] {
+    background-color: #fbcfe8;
+}
+
+.path-mod-sat .sat-hl-swatch.active {
+    border-color: #0f172a;
+    transform: scale(1.15);
+    box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #2563eb;
+}
+
+.path-mod-sat mark.sat-hl {
+    color: inherit;
+    padding: 1px 2px;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+.path-mod-sat mark.sat-hl-yellow {
+    background-color: #fef08a;
+}
+
+.path-mod-sat mark.sat-hl-blue {
+    background-color: #bae6fd;
+}
+
+.path-mod-sat mark.sat-hl-pink {
+    background-color: #fbcfe8;
+}
+
+.path-mod-sat .sat-annotation-item {
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 6px 8px;
+    background-color: #f8fafc;
+    font-size: 0.85rem;
+}
+
+/* Accessibility options */
+.path-mod-sat #sat-simulator-app.sat-font-lg .sat-reading-text,
+.path-mod-sat #sat-simulator-app.sat-font-lg .sat-prompt-text,
+.path-mod-sat #sat-simulator-app.sat-font-lg .sat-option-text {
+    font-size: 1.25rem !important;
+}
+
+.path-mod-sat #sat-simulator-app.sat-font-xl .sat-reading-text,
+.path-mod-sat #sat-simulator-app.sat-font-xl .sat-prompt-text,
+.path-mod-sat #sat-simulator-app.sat-font-xl .sat-option-text {
+    font-size: 1.45rem !important;
+}
+
+.path-mod-sat #sat-simulator-app.sat-high-contrast .sat-stimulus-pane,
+.path-mod-sat #sat-simulator-app.sat-high-contrast .sat-question-pane {
+    background-color: #000000 !important;
+    color: #ffffff !important;
+}
+
+.path-mod-sat #sat-simulator-app.sat-high-contrast .sat-reading-text,
+.path-mod-sat #sat-simulator-app.sat-high-contrast .sat-prompt-text {
+    color: #ffffff !important;
+}
+
+.path-mod-sat #sat-simulator-app.sat-high-contrast .sat-option-card {
+    background-color: #111827 !important;
+    color: #ffffff !important;
+    border-color: #facc15 !important;
+}
+
+.path-mod-sat #sat-simulator-app.sat-high-contrast .sat-option-card.selected {
+    background-color: #1e3a8a !important;
+}
+
+.path-mod-sat #sat-simulator-app.sat-high-contrast mark.sat-hl {
+    color: #0f172a !important;
+}
