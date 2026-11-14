@@ -39,9 +39,32 @@ require_capability('mod/sat:manageoverrides', $context);
 
 // Handle save override action.
 if ($action === 'save' && confirm_sesskey()) {
-    $userid = required_param('userid', PARAM_INT);
+    $userid = optional_param('userid', 0, PARAM_INT);
+    $groupid = optional_param('groupid', 0, PARAM_INT);
     $timemultiplier = required_param('timemultiplier', PARAM_FLOAT);
     $attempts = optional_param('attempts', 0, PARAM_INT);
+    $timeopenraw = trim(optional_param('timeopen', '', PARAM_TEXT));
+    $timecloseraw = trim(optional_param('timeclose', '', PARAM_TEXT));
+
+    $timeopenval = null;
+    if ($timeopenraw !== '') {
+        $parsedopen = strtotime($timeopenraw);
+        if ($parsedopen !== false) {
+            $timeopenval = $parsedopen;
+        }
+    }
+
+    $timecloseval = null;
+    if ($timecloseraw !== '') {
+        $parsedclose = strtotime($timecloseraw);
+        if ($parsedclose !== false) {
+            $timecloseval = $parsedclose;
+        }
+    }
+
+    if ($timeopenval !== null && $timecloseval !== null && $timecloseval <= $timeopenval) {
+        $timecloseval = null;
+    }
 
     if ($userid > 0) {
         $existing = $DB->get_record('sat_overrides', [
@@ -52,13 +75,41 @@ if ($action === 'save' && confirm_sesskey()) {
         if ($existing) {
             $existing->timemultiplier = $timemultiplier;
             $existing->attempts = $attempts;
+            $existing->timeopen = $timeopenval;
+            $existing->timeclose = $timecloseval;
             $DB->update_record('sat_overrides', $existing);
         } else {
             $record = new stdClass();
             $record->satid = $sat->id;
             $record->userid = $userid;
+            $record->groupid = null;
             $record->timemultiplier = $timemultiplier;
             $record->attempts = $attempts;
+            $record->timeopen = $timeopenval;
+            $record->timeclose = $timecloseval;
+            $DB->insert_record('sat_overrides', $record);
+        }
+    } else if ($groupid > 0) {
+        $existing = $DB->get_record('sat_overrides', [
+            'satid' => $sat->id,
+            'groupid' => $groupid,
+        ]);
+
+        if ($existing) {
+            $existing->timemultiplier = $timemultiplier;
+            $existing->attempts = $attempts;
+            $existing->timeopen = $timeopenval;
+            $existing->timeclose = $timecloseval;
+            $DB->update_record('sat_overrides', $existing);
+        } else {
+            $record = new stdClass();
+            $record->satid = $sat->id;
+            $record->userid = null;
+            $record->groupid = $groupid;
+            $record->timemultiplier = $timemultiplier;
+            $record->attempts = $attempts;
+            $record->timeopen = $timeopenval;
+            $record->timeclose = $timecloseval;
             $DB->insert_record('sat_overrides', $record);
         }
     }
@@ -90,12 +141,13 @@ $enrolledusers = get_enrolled_users($context, 'mod/sat:attempt');
 if (empty($enrolledusers)) {
     $enrolledusers = get_enrolled_users($context);
 }
+$coursegroups = function_exists('groups_get_all_groups') ? groups_get_all_groups($course->id) : [];
 
 echo html_writer::start_div('card p-3 mb-4 shadow-sm border bg-light');
 echo html_writer::tag('h5', 'Add / Update Accommodation Override', ['class' => 'card-title mb-3']);
 
-if (empty($enrolledusers)) {
-    echo $OUTPUT->notification('No enrolled users found in this course.', 'warning');
+if (empty($enrolledusers) && empty($coursegroups)) {
+    echo $OUTPUT->notification('No enrolled users or groups found in this course.', 'warning');
 } else {
     echo html_writer::start_tag('form', [
         'method' => 'post',
@@ -109,15 +161,25 @@ if (empty($enrolledusers)) {
     // Student selector.
     echo html_writer::start_div('col-md-4');
     echo html_writer::tag('label', get_string('user'), ['for' => 'ov-userid', 'class' => 'form-label fw-semibold']);
-    $useroptions = [];
+    $useroptions = [0 => '-- ' . get_string('override_group', 'mod_sat') . ' --'];
     foreach ($enrolledusers as $u) {
         $useroptions[$u->id] = fullname($u) . ' (' . $u->email . ')';
     }
     echo html_writer::select($useroptions, 'userid', 0, false, ['id' => 'ov-userid', 'class' => 'form-select']);
     echo html_writer::end_div();
 
+    // Optional group selector (used when User selector is set to Group override).
+    echo html_writer::start_div('col-md-4');
+    echo html_writer::tag('label', get_string('group'), ['for' => 'ov-groupid', 'class' => 'form-label fw-semibold']);
+    $groupoptions = [0 => get_string('none')];
+    foreach ($coursegroups as $g) {
+        $groupoptions[$g->id] = format_string($g->name);
+    }
+    echo html_writer::select($groupoptions, 'groupid', 0, false, ['id' => 'ov-groupid', 'class' => 'form-select']);
+    echo html_writer::end_div();
+
     // Time multiplier selector.
-    echo html_writer::start_div('col-md-3');
+    echo html_writer::start_div('col-md-2');
     echo html_writer::tag('label', get_string('timemultiplier', 'mod_sat'), [
         'for' => 'ov-timemultiplier',
         'class' => 'form-label fw-semibold',
@@ -135,7 +197,7 @@ if (empty($enrolledusers)) {
     echo html_writer::end_div();
 
     // Attempts allowed selector.
-    echo html_writer::start_div('col-md-3');
+    echo html_writer::start_div('col-md-2');
     echo html_writer::tag('label', get_string('attemptsallowed', 'mod_sat'), [
         'for' => 'ov-attempts',
         'class' => 'form-label fw-semibold',
@@ -150,6 +212,34 @@ if (empty($enrolledusers)) {
     echo html_writer::select($attemptoptions, 'attempts', (int)$sat->attempts, false, [
         'id' => 'ov-attempts',
         'class' => 'form-select',
+    ]);
+    echo html_writer::end_div();
+
+    // Optional open date override.
+    echo html_writer::start_div('col-md-5');
+    echo html_writer::tag('label', get_string('timeopen', 'mod_sat'), [
+        'for' => 'ov-timeopen',
+        'class' => 'form-label fw-semibold',
+    ]);
+    echo html_writer::empty_tag('input', [
+        'type' => 'datetime-local',
+        'name' => 'timeopen',
+        'id' => 'ov-timeopen',
+        'class' => 'form-control',
+    ]);
+    echo html_writer::end_div();
+
+    // Optional close date override.
+    echo html_writer::start_div('col-md-5');
+    echo html_writer::tag('label', get_string('timeclose', 'mod_sat'), [
+        'for' => 'ov-timeclose',
+        'class' => 'form-label fw-semibold',
+    ]);
+    echo html_writer::empty_tag('input', [
+        'type' => 'datetime-local',
+        'name' => 'timeclose',
+        'id' => 'ov-timeclose',
+        'class' => 'form-control',
     ]);
     echo html_writer::end_div();
 
@@ -174,16 +264,27 @@ if (empty($overrides)) {
 } else {
     $table = new html_table();
     $table->head = [
-        get_string('user'),
+        get_string('override_target', 'mod_sat'),
         get_string('timemultiplier', 'mod_sat'),
         get_string('attemptsallowed', 'mod_sat'),
+        get_string('timeopen', 'mod_sat'),
+        get_string('timeclose', 'mod_sat'),
         get_string('actions'),
     ];
     $table->attributes['class'] = 'table table-bordered table-striped align-middle';
 
     foreach ($overrides as $ov) {
-        $user = $ov->userid ? $DB->get_record('user', ['id' => $ov->userid]) : null;
-        $username = $user ? fullname($user) : get_string('group');
+        if (!empty($ov->userid)) {
+            $user = $DB->get_record('user', ['id' => $ov->userid]);
+            $targetname = $user ? fullname($user) : get_string('user');
+        } else if (!empty($ov->groupid)) {
+            $group = $DB->get_record('groups', ['id' => $ov->groupid]);
+            $groupname = $group ? format_string($group->name) : ('#' . $ov->groupid);
+            $targetname = get_string('group') . ': ' . $groupname;
+        } else {
+            $targetname = get_string('group');
+        }
+
         $multstr = $ov->timemultiplier ? ($ov->timemultiplier . 'x') : '1.0x';
         if ($ov->attempts === null) {
             $attstr = get_string('default', 'mod_sat');
@@ -193,6 +294,9 @@ if (empty($overrides)) {
             $attstr = (string)$ov->attempts;
         }
 
+        $openstr = !empty($ov->timeopen) ? userdate($ov->timeopen) : get_string('default', 'mod_sat');
+        $closestr = !empty($ov->timeclose) ? userdate($ov->timeclose) : get_string('default', 'mod_sat');
+
         $deleteurl = new moodle_url('/mod/sat/overrides.php', [
             'cmid' => $cm->id,
             'action' => 'delete',
@@ -201,10 +305,10 @@ if (empty($overrides)) {
         ]);
         $deletelink = html_writer::link($deleteurl, get_string('delete'), [
             'class' => 'btn btn-sm btn-outline-danger',
-            'onclick' => 'return confirm("Remove accommodation override for ' . s($username) . '?");',
+            'onclick' => 'return confirm("Remove accommodation override for ' . s($targetname) . '?");',
         ]);
 
-        $table->data[] = [$username, $multstr, $attstr, $deletelink];
+        $table->data[] = [$targetname, $multstr, $attstr, $openstr, $closestr, $deletelink];
     }
     echo html_writer::table($table);
 }

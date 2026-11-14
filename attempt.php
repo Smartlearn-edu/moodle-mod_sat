@@ -45,6 +45,22 @@ if (!$canattempt && !$canpreview) {
     throw new \moodle_exception('nopermissions', 'error', '', get_string('sat:attempt', 'mod_sat'));
 }
 
+// Enforce availability windows, attempt limits, and preview capability.
+[$canstart, $reasonkey] = \mod_sat\local\attempt_manager::can_start_or_resume_attempt(
+    $sat,
+    $USER->id,
+    $context,
+    (bool)$preview
+);
+if (!$canstart) {
+    redirect(
+        new moodle_url('/mod/sat/view.php', ['id' => $cm->id]),
+        get_string($reasonkey ?: 'examnotopen', 'mod_sat'),
+        null,
+        \core\output\notification::NOTIFY_WARNING
+    );
+}
+
 // Check for existing active attempt (or create new).
 $activeattempt = $DB->get_record_select(
     'sat_attempts',
@@ -78,7 +94,8 @@ $PAGE->set_pagelayout('embedded');
 $PAGE->set_title(format_string($sat->name) . ' — ' . get_string('modulename', 'mod_sat'));
 $PAGE->set_context($context);
 
-// Pass initialization parameters to AMD runner.
+// Pass initialization parameters and site calculator policy to AMD runner.
+$config = get_config('mod_sat');
 $initparams = [
     'attemptid' => (int)$activeattempt->id,
     'modattemptid' => (int)$activemodattempt->id,
@@ -87,6 +104,8 @@ $initparams = [
     'sesskey' => sesskey(),
     'examScope' => (string)$sat->exam_scope,
     'pacingMode' => (string)$sat->pacing_mode,
+    'enableGraphingCalc' => !isset($config->enable_graphing_calc) || !empty($config->enable_graphing_calc),
+    'enableScientificCalc' => !isset($config->enable_scientific_calc) || !empty($config->enable_scientific_calc),
 ];
 
 $PAGE->requires->js_call_amd('mod_sat/runner', 'init', [$initparams]);

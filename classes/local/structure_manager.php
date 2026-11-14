@@ -53,6 +53,7 @@ class structure_manager {
 
         $sql = "SELECT s.*,
                        qr.questionbankentryid,
+                       qc.contextid AS questioncontextid,
                        q.id AS questionid,
                        q.name AS questionname,
                        q.qtype,
@@ -65,6 +66,8 @@ class structure_manager {
                    AND qr.questionarea = 'slot'
              LEFT JOIN {question_bank_entries} qbe
                     ON qbe.id = qr.questionbankentryid
+             LEFT JOIN {question_categories} qc
+                    ON qc.id = qbe.questioncategoryid
              LEFT JOIN {question_versions} qv
                     ON qv.questionbankentryid = qbe.id
                    AND qv.status = 'ready'
@@ -880,5 +883,38 @@ class structure_manager {
 
         // If no explicit delimiter, entire text is the stimulus/prompt.
         return ['', trim($questiontext)];
+    }
+
+    /**
+     * Rewrites @@PLUGINFILE@@ URLs for question content rendered inside an SAT attempt.
+     *
+     * @param string $text Raw HTML containing optional @@PLUGINFILE@@ placeholders
+     * @param int $questioncontextid Context ID of the question category owning the file
+     * @param string $filearea Question file area ('questiontext', 'answer', or 'generalfeedback')
+     * @param int $qubaid Question usage ID stored on sat_attempts.uniqueid
+     * @param int $usageslot Usage slot number inside the question usage
+     * @param int $itemid Question ID or answer ID owning the file area itemid
+     * @return string Rewritten HTML with pluginfile.php URLs
+     */
+    public static function rewrite_question_urls(
+        string $text,
+        int $questioncontextid,
+        string $filearea,
+        int $qubaid,
+        int $usageslot,
+        int $itemid
+    ): string {
+        if ($text === '' || !str_contains($text, '@@PLUGINFILE@@') || $questioncontextid <= 0 || $qubaid <= 0) {
+            return $text;
+        }
+
+        return file_rewrite_pluginfile_urls(
+            $text,
+            'pluginfile.php',
+            $questioncontextid,
+            'question',
+            $filearea,
+            "{$qubaid}/{$usageslot}/{$itemid}"
+        );
     }
 }

@@ -74,11 +74,30 @@ class attempt_api extends external_api {
 
         // Fetch active or resume paused module attempt.
         $modattempt = attempt_manager::get_or_resume_active_module($sat, $attempt);
+        $now = time();
+        $grace = (int)($sat->graceperiod ?? 0);
+
+        // Auto-submit overdue module if deadline + grace period elapsed while away.
+        if (
+            $attempt->state === attempt_manager::STATE_INPROGRESS
+            && $modattempt
+            && $modattempt->state === attempt_manager::STATE_INPROGRESS
+            && $now > ((int)$modattempt->timedeadline + $grace)
+        ) {
+            [$attempt] = attempt_manager::submit_module((int)$attempt->id, (int)$modattempt->id);
+            $attempt = $DB->get_record('sat_attempts', ['id' => $attempt->id], '*', MUST_EXIST);
+            if ($attempt->state === attempt_manager::STATE_INPROGRESS) {
+                $modattempt = attempt_manager::get_or_resume_active_module($sat, $attempt);
+            } else {
+                $latest = $DB->get_records('sat_module_attempts', ['attemptid' => $attempt->id], 'id DESC', '*', 0, 1);
+                $modattempt = $latest ? reset($latest) : $modattempt;
+            }
+        }
+
         $module = $DB->get_record('sat_modules', ['id' => $modattempt->moduleid], '*', MUST_EXIST);
 
         // Server-authoritative remaining time.
-        $now = time();
-        $timeremaining = max(0, $modattempt->timedeadline - $now);
+        $timeremaining = max(0, (int)$modattempt->timedeadline - $now);
 
         // Load questions in this module.
         $slots = structure_manager::get_slots($module->id);
@@ -87,7 +106,15 @@ class attempt_api extends external_api {
         $usageslot = ((int)$modattempt->firstslot > 0) ? (int)$modattempt->firstslot : 1;
 
         foreach ($slots as $s) {
-            $rawtext = $s->questiontext ?? '';
+            $qctxid = !empty($s->questioncontextid) ? (int)$s->questioncontextid : (int)$context->id;
+            $rawtext = structure_manager::rewrite_question_urls(
+                (string)($s->questiontext ?? ''),
+                $qctxid,
+                'questiontext',
+                (int)$attempt->uniqueid,
+                $usageslot,
+                (int)($s->questionid ?? 0)
+            );
             [$stimulus, $prompt] = structure_manager::split_stimulus($rawtext);
 
             $options = [];
@@ -102,9 +129,17 @@ class attempt_api extends external_api {
                     if (!isset($letters[$aidx])) {
                         break;
                     }
+                    $anshtml = structure_manager::rewrite_question_urls(
+                        (string)$ans->answer,
+                        $qctxid,
+                        'answer',
+                        (int)$attempt->uniqueid,
+                        $usageslot,
+                        (int)$ans->id
+                    );
                     $options[] = [
                         'key' => $letters[$aidx],
-                        'text' => format_text($ans->answer, $ans->answerformat ?? FORMAT_HTML, ['context' => $context]),
+                        'text' => format_text($anshtml, $ans->answerformat ?? FORMAT_HTML, ['context' => $context]),
                     ];
                 }
             }
@@ -251,7 +286,30 @@ class attempt_api extends external_api {
             throw new moodle_exception('nopermissions', 'error');
         }
 
+        if ($attempt->state !== attempt_manager::STATE_INPROGRESS) {
+            throw new moodle_exception('nopermissions', 'error');
+        }
+
+        $modattempt = $DB->get_record_select(
+            'sat_module_attempts',
+            'attemptid = :attemptid AND state = :inprogress',
+            ['attemptid' => $attempt->id, 'inprogress' => attempt_manager::STATE_INPROGRESS],
+            '*',
+            IGNORE_MULTIPLE
+        );
+        if (!$modattempt) {
+            throw new moodle_exception('nopermissions', 'error');
+        }
+
+        if ($params['slot'] < (int)$modattempt->firstslot || $params['slot'] > (int)$modattempt->lastslot) {
+            throw new moodle_exception('invalidparameter', 'debug');
+        }
+
         $now = time();
+        $grace = (int)($sat->graceperiod ?? 120);
+        if (empty($attempt->preview) && $now > ((int)$modattempt->timedeadline + $grace)) {
+            throw new moodle_exception('nopermissions', 'error');
+        }
         $record = $DB->get_record('sat_slot_state', [
             'attemptid' => $attempt->id,
             'slot' => $params['slot'],

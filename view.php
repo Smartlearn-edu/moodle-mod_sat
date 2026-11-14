@@ -44,6 +44,17 @@ require_login($course, true, $cm);
 $context = context_module::instance($cm->id);
 require_capability('mod/sat:view', $context);
 
+$canmanage = has_capability('mod/sat:manage', $context);
+$canattempt = has_capability('mod/sat:attempt', $context);
+$canpreview = get_capability_info('mod/sat:preview') ? has_capability('mod/sat:preview', $context) : $canmanage;
+
+// Handle teacher preview reset action before output begins.
+$action = optional_param('action', '', PARAM_ALPHA);
+if ($action === 'resetpreview' && ($canpreview || $canmanage) && confirm_sesskey()) {
+    \mod_sat\local\attempt_manager::delete_preview_attempts((int)$sat->id, (int)$USER->id);
+    redirect(new moodle_url('/mod/sat/view.php', ['id' => $cm->id]));
+}
+
 // Trigger course_module_viewed event.
 $event = \mod_sat\event\course_module_viewed::create([
     'objectid' => $sat->id,
@@ -70,37 +81,66 @@ if (trim(strip_tags($sat->intro))) {
     echo $OUTPUT->box(format_module_intro('sat', $sat, $cm->id), 'generalbox mod_introbox', 'intro');
 }
 
-// Display exam information card.
+// Display exam information card using effective user/group override settings.
 $now = time();
+$effective = \mod_sat\local\attempt_manager::get_effective_settings($sat, $USER->id);
 $infobox = html_writer::start_div('sat-exam-info card p-3 mb-4 shadow-sm');
 $infobox .= html_writer::tag('h5', get_string('examdetails', 'mod_sat'), ['class' => 'card-title text-primary']);
 $infobox .= html_writer::start_tag('ul', ['class' => 'list-unstyled mb-0']);
 
 $scopestr = get_string('scope_' . $sat->exam_scope, 'mod_sat');
-$infobox .= html_writer::tag('li', html_writer::tag('strong', get_string('exam_scope', 'mod_sat') . ': ') . $scopestr, ['class' => 'py-1']);
+$infobox .= html_writer::tag(
+    'li',
+    html_writer::tag('strong', get_string('exam_scope', 'mod_sat') . ': ') . $scopestr,
+    ['class' => 'py-1']
+);
 
 $pacingstr = get_string('pacing_' . $sat->pacing_mode, 'mod_sat');
-$infobox .= html_writer::tag('li', html_writer::tag('strong', get_string('pacing_mode', 'mod_sat') . ': ') . $pacingstr, ['class' => 'py-1']);
+$infobox .= html_writer::tag(
+    'li',
+    html_writer::tag('strong', get_string('pacing_mode', 'mod_sat') . ': ') . $pacingstr,
+    ['class' => 'py-1']
+);
 
-if (!empty($sat->timeopen)) {
-    $infobox .= html_writer::tag('li', html_writer::tag('strong', get_string('timeopen', 'mod_sat') . ': ') . userdate($sat->timeopen), ['class' => 'py-1']);
+if (!empty($effective->timeopen)) {
+    $infobox .= html_writer::tag(
+        'li',
+        html_writer::tag('strong', get_string('timeopen', 'mod_sat') . ': ') . userdate($effective->timeopen),
+        ['class' => 'py-1']
+    );
 }
-if (!empty($sat->timeclose)) {
-    $infobox .= html_writer::tag('li', html_writer::tag('strong', get_string('timeclose', 'mod_sat') . ': ') . userdate($sat->timeclose), ['class' => 'py-1']);
+if (!empty($effective->timeclose)) {
+    $infobox .= html_writer::tag(
+        'li',
+        html_writer::tag('strong', get_string('timeclose', 'mod_sat') . ': ') . userdate($effective->timeclose),
+        ['class' => 'py-1']
+    );
 }
 
-$attemptslimit = $sat->attempts ? $sat->attempts : get_string('unlimited');
-$infobox .= html_writer::tag('li', html_writer::tag('strong', get_string('attemptsallowed', 'mod_sat') . ': ') . $attemptslimit, ['class' => 'py-1']);
+$attemptslimit = $effective->attempts ? $effective->attempts : get_string('unlimited');
+$infobox .= html_writer::tag(
+    'li',
+    html_writer::tag('strong', get_string('attemptsallowed', 'mod_sat') . ': ') . $attemptslimit,
+    ['class' => 'py-1']
+);
+
+if ((float)$effective->timemultiplier > 1.0) {
+    $infobox .= html_writer::tag(
+        'li',
+        html_writer::tag(
+            'span',
+            get_string('accommodation_badge', 'mod_sat', $effective->timemultiplier),
+            ['class' => 'badge bg-info text-dark']
+        ),
+        ['class' => 'py-1']
+    );
+}
 
 $infobox .= html_writer::end_tag('ul');
 $infobox .= html_writer::end_div();
 echo $infobox;
 
 // Teacher management links.
-$canmanage = has_capability('mod/sat:manage', $context);
-$canattempt = has_capability('mod/sat:attempt', $context);
-$canpreview = get_capability_info('mod/sat:preview') ? has_capability('mod/sat:preview', $context) : $canmanage;
-
 if ($canmanage || has_capability('mod/sat:viewreports', $context)) {
     echo html_writer::start_div('mb-4 d-flex flex-wrap gap-2');
     if ($canmanage) {
@@ -119,6 +159,7 @@ if ($canmanage || has_capability('mod/sat:viewreports', $context)) {
 // Check student's past attempts.
 $attempts = $DB->get_records('sat_attempts', ['satid' => $sat->id, 'userid' => $USER->id], 'attempt ASC');
 $activeattempt = null;
+$haspreview = false;
 
 if (!empty($attempts)) {
     echo html_writer::tag('h5', get_string('summaryofattempts', 'mod_sat'), ['class' => 'mt-4']);
@@ -138,6 +179,9 @@ if (!empty($attempts)) {
         if ($att->state === 'inprogress' || $att->state === 'paused') {
             $activeattempt = $att;
         }
+        if (!empty($att->preview)) {
+            $haspreview = true;
+        }
 
         $completedstr = $att->timefinish ? userdate($att->timefinish) : '-';
         $statestr = get_string('state_' . $att->state, 'mod_sat');
@@ -148,16 +192,37 @@ if (!empty($attempts)) {
 
         $actionlink = '';
         if ($att->state === 'inprogress' || $att->state === 'paused') {
-            $actionlink = html_writer::link(new moodle_url('/mod/sat/attempt.php', ['id' => $cm->id]), get_string('continueattempt', 'mod_sat'), ['class' => 'btn btn-sm btn-primary']);
+            $actionlink = html_writer::link(
+                new moodle_url('/mod/sat/attempt.php', ['id' => $cm->id]),
+                get_string('continueattempt', 'mod_sat'),
+                ['class' => 'btn btn-sm btn-primary']
+            );
         } else {
             $buttons = [];
-            $buttons[] = html_writer::link(new moodle_url('/mod/sat/diagnostic.php', ['attemptid' => $att->id]), get_string('diagnostic_report', 'mod_sat'), ['class' => 'btn btn-sm btn-primary']);
-            $buttons[] = html_writer::link(new moodle_url('/mod/sat/review.php', ['attemptid' => $att->id]), get_string('review', 'mod_sat'), ['class' => 'btn btn-sm btn-outline-secondary']);
+            $buttons[] = html_writer::link(
+                new moodle_url('/mod/sat/diagnostic.php', ['attemptid' => $att->id]),
+                get_string('diagnostic_report', 'mod_sat'),
+                ['class' => 'btn btn-sm btn-primary']
+            );
+            $buttons[] = html_writer::link(
+                new moodle_url('/mod/sat/review.php', ['attemptid' => $att->id]),
+                get_string('review', 'mod_sat'),
+                ['class' => 'btn btn-sm btn-outline-secondary']
+            );
             $actionlink = implode(' ', $buttons);
         }
 
+        $attlabel = (string)$att->attempt;
+        if (!empty($att->preview)) {
+            $attlabel .= ' ' . html_writer::tag(
+                'span',
+                get_string('preview_badge', 'mod_sat'),
+                ['class' => 'badge bg-info text-dark ms-1']
+            );
+        }
+
         $table->data[] = [
-            $att->attempt,
+            $attlabel,
             $statestr,
             $completedstr,
             $rwstr,
@@ -170,24 +235,53 @@ if (!empty($attempts)) {
 }
 
 // Action button: Start / Resume / Preview.
-$isopen = (empty($sat->timeopen) || $now >= $sat->timeopen) && (empty($sat->timeclose) || $now <= $sat->timeclose);
-$reachedlimit = ($sat->attempts > 0 && count($attempts) >= $sat->attempts);
+[$canstart, $reasonkey] = \mod_sat\local\attempt_manager::can_start_or_resume_attempt(
+    $sat,
+    $USER->id,
+    $context,
+    false
+);
 
-echo html_writer::start_div('mt-4 text-center');
+echo html_writer::start_div('mt-4 text-center d-flex justify-content-center flex-wrap gap-3');
 
-if ($activeattempt) {
+if ($activeattempt && $canstart) {
     // Resume current attempt.
-    echo html_writer::link(new moodle_url('/mod/sat/attempt.php', ['id' => $cm->id]), get_string('continueattempt', 'mod_sat'), ['class' => 'btn btn-lg btn-success px-5 shadow']);
-} else if ($canattempt && $isopen && !$reachedlimit) {
+    echo html_writer::link(
+        new moodle_url('/mod/sat/attempt.php', ['id' => $cm->id]),
+        get_string('continueattempt', 'mod_sat'),
+        ['class' => 'btn btn-lg btn-success px-5 shadow']
+    );
+} else if (!$activeattempt && $canstart) {
     // Start new attempt.
-    echo html_writer::link(new moodle_url('/mod/sat/attempt.php', ['id' => $cm->id]), get_string('startexam', 'mod_sat'), ['class' => 'btn btn-lg btn-primary px-5 shadow']);
+    echo html_writer::link(
+        new moodle_url('/mod/sat/attempt.php', ['id' => $cm->id]),
+        get_string('startexam', 'mod_sat'),
+        ['class' => 'btn btn-lg btn-primary px-5 shadow']
+    );
 } else if ($canpreview) {
     // Teacher preview.
-    echo html_writer::link(new moodle_url('/mod/sat/attempt.php', ['id' => $cm->id, 'preview' => 1]), get_string('previewexam', 'mod_sat'), ['class' => 'btn btn-lg btn-info px-5 text-white shadow']);
-} else if (!$isopen) {
-    echo $OUTPUT->notification(get_string('examnotopen', 'mod_sat'), 'warning');
-} else if ($reachedlimit) {
+    echo html_writer::link(
+        new moodle_url('/mod/sat/attempt.php', ['id' => $cm->id, 'preview' => 1]),
+        get_string('previewexam', 'mod_sat'),
+        ['class' => 'btn btn-lg btn-info px-5 text-white shadow']
+    );
+} else if ($reasonkey === 'nomoreattempts') {
     echo $OUTPUT->notification(get_string('nomoreattempts', 'mod_sat'), 'info');
+} else {
+    echo $OUTPUT->notification(get_string('examnotopen', 'mod_sat'), 'warning');
+}
+
+if ($haspreview && ($canpreview || $canmanage)) {
+    $reseturl = new moodle_url('/mod/sat/view.php', [
+        'id' => $cm->id,
+        'action' => 'resetpreview',
+        'sesskey' => sesskey(),
+    ]);
+    echo html_writer::link(
+        $reseturl,
+        get_string('resetpreview', 'mod_sat'),
+        ['class' => 'btn btn-lg btn-outline-danger px-4']
+    );
 }
 
 echo html_writer::end_div();

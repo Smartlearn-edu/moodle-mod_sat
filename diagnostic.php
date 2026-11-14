@@ -43,6 +43,8 @@ if (!$canviewreports && (!$isowner || !$canreviewown)) {
     throw new \moodle_exception('nopermissions', 'error', '', get_string('diagnostic_report', 'mod_sat'));
 }
 
+[$canview, $showdetails, $reasonkey] = \mod_sat\local\attempt_manager::can_review_attempt($sat, $attempt, $context);
+
 $PAGE->set_url('/mod/sat/diagnostic.php', ['attemptid' => $attempt->id]);
 $PAGE->set_title(get_string('diagnostic_report', 'mod_sat') . ': ' . format_string($sat->name));
 $PAGE->set_heading(format_string($course->fullname));
@@ -50,6 +52,19 @@ $PAGE->set_context($context);
 
 echo $OUTPUT->header();
 echo $OUTPUT->heading(get_string('diagnostic_report', 'mod_sat') . ' — ' . format_string($sat->name));
+
+if (!$canview) {
+    echo $OUTPUT->notification(get_string($reasonkey ?: 'reviewafterclose_notice', 'mod_sat'), 'warning');
+    echo html_writer::start_div('mt-3');
+    echo html_writer::link(
+        new moodle_url('/mod/sat/view.php', ['id' => $cm->id]),
+        get_string('back'),
+        ['class' => 'btn btn-secondary px-4']
+    );
+    echo html_writer::end_div();
+    echo $OUTPUT->footer();
+    exit;
+}
 
 // User Info.
 $user = $DB->get_record('user', ['id' => $attempt->userid]);
@@ -64,7 +79,11 @@ echo html_writer::start_div('sat-score-hero card p-4 mb-4 shadow text-white bg-d
 echo html_writer::start_div('d-flex justify-content-between align-items-center flex-wrap gap-3');
 
 echo html_writer::start_div();
-echo html_writer::tag('span', 'Official-Style SAT Diagnostic Report', ['class' => 'badge bg-primary text-uppercase px-3 py-2 mb-2']);
+echo html_writer::tag(
+    'span',
+    get_string('diagnostic_report', 'mod_sat'),
+    ['class' => 'badge bg-primary text-uppercase px-3 py-2 mb-2']
+);
 echo html_writer::tag('h2', $fullname, ['class' => 'fw-bold mb-1 text-white']);
 echo html_writer::tag('div', get_string('attempt', 'mod_sat') . ' #' . $attempt->attempt . ' • ' . userdate($attempt->timefinish ?: time()), ['class' => 'text-secondary']);
 echo html_writer::end_div();
@@ -144,7 +163,13 @@ echo html_writer::start_div('d-flex justify-content-between align-items-center m
 echo html_writer::link(new moodle_url('/mod/sat/view.php', ['id' => $cm->id]), get_string('back'), ['class' => 'btn btn-secondary px-4']);
 
 echo html_writer::start_div('d-flex gap-2');
-echo html_writer::link(new moodle_url('/mod/sat/review.php', ['attemptid' => $attempt->id]), 'Question Review', ['class' => 'btn btn-outline-primary']);
+if ($showdetails) {
+    echo html_writer::link(
+        new moodle_url('/mod/sat/review.php', ['attemptid' => $attempt->id]),
+        get_string('questionreview', 'mod_sat'),
+        ['class' => 'btn btn-outline-primary']
+    );
+}
 echo html_writer::tag('button', '<i class="fa fa-print me-1"></i> Print Score Report', [
     'class' => 'btn btn-primary',
     'onclick' => 'window.print();',

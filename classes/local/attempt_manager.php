@@ -42,6 +42,106 @@ class attempt_manager {
     public const STATE_FINISHED = 'finished';
 
     /**
+     * Resolves effective availability, attempt limits, and time multiplier for a user.
+     *
+     * Priority: user-specific override > group override(s) > activity defaults.
+     *
+     * @param stdClass $sat SAT instance record
+     * @param int $userid User ID
+     * @return stdClass Effective settings (timeopen, timeclose, attempts, timemultiplier)
+     */
+    public static function get_effective_settings(stdClass $sat, int $userid): stdClass {
+        global $DB;
+
+        $effective = (object)[
+            'timeopen' => (int)($sat->timeopen ?? 0),
+            'timeclose' => (int)($sat->timeclose ?? 0),
+            'attempts' => (int)($sat->attempts ?? 0),
+            'timemultiplier' => 1.0,
+        ];
+
+        $overrides = $DB->get_records('sat_overrides', ['satid' => $sat->id]);
+        if (empty($overrides)) {
+            return $effective;
+        }
+
+        // Resolve user's group memberships for group-level overrides.
+        $groupids = [];
+        if (function_exists('groups_get_user_groups') && !empty($sat->course)) {
+            $usergroups = groups_get_user_groups((int)$sat->course, $userid);
+            if (!empty($usergroups[0])) {
+                $groupids = array_map('intval', $usergroups[0]);
+            }
+        }
+
+        $groupmult = null;
+        $groupattempts = null;
+        $grouptimeopen = null;
+        $grouptimeclose = null;
+        $useroverride = null;
+
+        foreach ($overrides as $ov) {
+            if (!empty($ov->userid) && (int)$ov->userid === $userid) {
+                $useroverride = $ov;
+                continue;
+            }
+            if (!empty($ov->groupid) && empty($ov->userid) && in_array((int)$ov->groupid, $groupids, true)) {
+                if (!empty($ov->timemultiplier) && (float)$ov->timemultiplier > 0.0) {
+                    $mult = (float)$ov->timemultiplier;
+                    $groupmult = ($groupmult === null) ? $mult : max($groupmult, $mult);
+                }
+                if ($ov->attempts !== null) {
+                    $att = (int)$ov->attempts;
+                    if ($att === 0 || $groupattempts === 0) {
+                        $groupattempts = 0;
+                    } else {
+                        $groupattempts = ($groupattempts === null) ? $att : max($groupattempts, $att);
+                    }
+                }
+                if (!empty($ov->timeopen)) {
+                    $open = (int)$ov->timeopen;
+                    $grouptimeopen = ($grouptimeopen === null) ? $open : min($grouptimeopen, $open);
+                }
+                if (!empty($ov->timeclose)) {
+                    $close = (int)$ov->timeclose;
+                    $grouptimeclose = ($grouptimeclose === null) ? $close : max($grouptimeclose, $close);
+                }
+            }
+        }
+
+        if ($groupmult !== null) {
+            $effective->timemultiplier = $groupmult;
+        }
+        if ($groupattempts !== null) {
+            $effective->attempts = $groupattempts;
+        }
+        if ($grouptimeopen !== null) {
+            $effective->timeopen = $grouptimeopen;
+        }
+        if ($grouptimeclose !== null) {
+            $effective->timeclose = $grouptimeclose;
+        }
+
+        // User-specific override takes highest precedence over group and activity defaults.
+        if ($useroverride) {
+            if (!empty($useroverride->timemultiplier) && (float)$useroverride->timemultiplier > 0.0) {
+                $effective->timemultiplier = (float)$useroverride->timemultiplier;
+            }
+            if ($useroverride->attempts !== null) {
+                $effective->attempts = (int)$useroverride->attempts;
+            }
+            if (!empty($useroverride->timeopen)) {
+                $effective->timeopen = (int)$useroverride->timeopen;
+            }
+            if (!empty($useroverride->timeclose)) {
+                $effective->timeclose = (int)$useroverride->timeclose;
+            }
+        }
+
+        return $effective;
+    }
+
+    /**
      * Resolves accommodation time multiplier (e.g. 1.5x, 2.0x) for a user.
      *
      * @param int $satid SAT instance ID
@@ -51,13 +151,141 @@ class attempt_manager {
     public static function get_time_multiplier(int $satid, int $userid): float {
         global $DB;
 
-        // Check user-specific override.
+        $sat = $DB->get_record('sat', ['id' => $satid]);
+        if ($sat) {
+            return (float)self::get_effective_settings($sat, $userid)->timemultiplier;
+        }
+
         $override = $DB->get_record('sat_overrides', ['satid' => $satid, 'userid' => $userid]);
-        if ($override && !empty($override->timemultiplier)) {
+        if ($override && !empty($override->timemultiplier) && (float)$override->timemultiplier > 0.0) {
             return (float)$override->timemultiplier;
         }
 
         return 1.0;
+    }
+
+    /**
+     * Checks whether a user is allowed to start or resume an SAT attempt under availability windows and limits.
+     *
+     * @param stdClass $sat SAT instance record
+     * @param int $userid User ID
+     * @param context_module $context Activity module context
+     * @param bool $preview Whether preview mode was requested
+     * @return array [bool $allowed, string $reasonkey]
+     */
+    public static function can_start_or_resume_attempt(
+        stdClass $sat,
+        int $userid,
+        context_module $context,
+        bool $preview = false
+    ): array {
+        global $DB;
+
+        $canpreview = get_capability_info('mod/sat:preview')
+            ? has_capability('mod/sat:preview', $context, $userid)
+            : has_capability('mod/sat:manage', $context, $userid);
+
+        if ($preview) {
+            return $canpreview ? [true, ''] : [false, 'nopermissions'];
+        }
+
+        $activeattempt = $DB->get_record_select(
+            'sat_attempts',
+            'satid = :satid AND userid = :userid AND (state = :inprogress OR state = :paused)',
+            [
+                'satid' => $sat->id,
+                'userid' => $userid,
+                'inprogress' => self::STATE_INPROGRESS,
+                'paused' => self::STATE_PAUSED,
+            ],
+            '*',
+            IGNORE_MULTIPLE
+        );
+
+        // Allow teachers resuming an active preview attempt cleanly.
+        if ($activeattempt && !empty($activeattempt->preview) && $canpreview) {
+            return [true, ''];
+        }
+
+        if (!has_capability('mod/sat:attempt', $context, $userid)) {
+            return [false, 'nopermissions'];
+        }
+
+        $effective = self::get_effective_settings($sat, $userid);
+        $now = time();
+        $beforeopen = !empty($effective->timeopen) && $now < $effective->timeopen;
+        $afterclose = !empty($effective->timeclose) && $now > $effective->timeclose;
+        if ($beforeopen || $afterclose) {
+            return [false, 'examnotopen'];
+        }
+
+        if ($activeattempt) {
+            return [true, ''];
+        }
+
+        if ($effective->attempts > 0) {
+            $usedattempts = $DB->count_records('sat_attempts', [
+                'satid' => $sat->id,
+                'userid' => $userid,
+                'preview' => 0,
+            ]);
+            if ($usedattempts >= $effective->attempts) {
+                return [false, 'nomoreattempts'];
+            }
+        }
+
+        return [true, ''];
+    }
+
+    /**
+     * Checks post-attempt review permissions according to activity reviewoptions.
+     *
+     * @param stdClass $sat SAT instance record
+     * @param stdClass $attempt Attempt record
+     * @param context_module $context Activity module context
+     * @return array [bool $canview, bool $showdetails, string $reasonkey]
+     */
+    public static function can_review_attempt(stdClass $sat, stdClass $attempt, context_module $context): array {
+        if (has_capability('mod/sat:viewreports', $context) || has_capability('mod/sat:manage', $context)) {
+            return [true, true, ''];
+        }
+
+        $reviewmode = (int)($sat->reviewoptions ?? SAT_REVIEW_IMMEDIATE);
+        if ($reviewmode === SAT_REVIEW_AFTERCLOSE && !empty($sat->timeclose) && time() < (int)$sat->timeclose) {
+            return [false, false, 'reviewafterclose_notice'];
+        }
+
+        if ($reviewmode === SAT_REVIEW_SCORESONLY) {
+            return [true, false, 'reviewscoresonly_notice'];
+        }
+
+        return [true, true, ''];
+    }
+
+    /**
+     * Deletes all teacher preview attempts for a user in a given SAT activity.
+     *
+     * @param int $satid SAT instance ID
+     * @param int $userid User ID
+     * @return void
+     */
+    public static function delete_preview_attempts(int $satid, int $userid): void {
+        global $DB;
+
+        $previews = $DB->get_records('sat_attempts', [
+            'satid' => $satid,
+            'userid' => $userid,
+            'preview' => 1,
+        ]);
+
+        foreach ($previews as $att) {
+            $DB->delete_records('sat_slot_state', ['attemptid' => $att->id]);
+            $DB->delete_records('sat_module_attempts', ['attemptid' => $att->id]);
+            if (!empty($att->uniqueid) && class_exists('question_engine')) {
+                question_engine::delete_questions_usage_by_activity($att->uniqueid);
+            }
+            $DB->delete_records('sat_attempts', ['id' => $att->id]);
+        }
     }
 
     /**
@@ -104,10 +332,14 @@ class attempt_manager {
         $slots = structure_manager::get_slots($module->id);
         $firstslotnumber = 1;
         $lastslotnumber = 1;
+        $maxscore = 0.0;
         $isfirst = true;
 
         if (!empty($slots)) {
             foreach ($slots as $s) {
+                if (!empty($s->is_scored)) {
+                    $maxscore += (float)$s->maxmark;
+                }
                 if (!empty($s->questionid)) {
                     $question = question_bank::load_question($s->questionid);
                     $qubaslot = $quba->add_question($question, (float)$s->maxmark);
@@ -153,7 +385,7 @@ class attempt_manager {
         $modattempt->timedeadline = $now + $timelimit;
         $modattempt->timefinish = 0;
         $modattempt->rawscore = 0.0;
-        $modattempt->maxscore = (float)count($slots);
+        $modattempt->maxscore = $maxscore;
 
         $modattempt->id = $DB->insert_record('sat_module_attempts', $modattempt);
 
@@ -193,8 +425,7 @@ class attempt_manager {
 
         if ($pausedmod) {
             $module = $DB->get_record('sat_modules', ['id' => $pausedmod->moduleid]);
-            $override = $DB->get_record('sat_overrides', ['satid' => $sat->id, 'userid' => $attempt->userid]);
-            $multiplier = ($override && $override->timemultiplier > 0) ? (float)$override->timemultiplier : 1.0;
+            $multiplier = self::get_time_multiplier((int)$sat->id, (int)$attempt->userid);
             $baselimit = $module ? (int)$module->timelimit : 1920;
             $timelimit = (int) round($baselimit * $multiplier);
 
@@ -286,8 +517,22 @@ class attempt_manager {
     public static function submit_module(int $attemptid, int $modattemptid): array {
         global $DB;
 
+        $transaction = $DB->start_delegated_transaction();
+
         $attempt = $DB->get_record('sat_attempts', ['id' => $attemptid], '*', MUST_EXIST);
         $modattempt = $DB->get_record('sat_module_attempts', ['id' => $modattemptid], '*', MUST_EXIST);
+
+        // Idempotency guard: prevent duplicate transitions when auto-submit and manual submit race.
+        if ($modattempt->state === self::STATE_FINISHED) {
+            $existingaction = match ($attempt->state) {
+                self::STATE_FINISHED => 'finish',
+                self::STATE_PAUSED => 'pause',
+                default => 'continue',
+            };
+            $transaction->allow_commit();
+            return [$attempt, $existingaction];
+        }
+
         $module = $DB->get_record('sat_modules', ['id' => $modattempt->moduleid], '*', MUST_EXIST);
         $sat = $DB->get_record('sat', ['id' => $attempt->satid], '*', MUST_EXIST);
 
@@ -362,28 +607,32 @@ class attempt_manager {
             $nextsection = $module->section;
             if ($module->stage === 'm1') {
                 $route = ($module->section === 'rw') ? $attempt->route_rw : $attempt->route_math;
-                $nextstage = 'm2_' . $route;
+                $nextmodule = mst_router::get_target_module((int)$sat->id, $nextsection, $route);
+                $nextstage = $nextmodule ? $nextmodule->stage : ('m2_' . $route);
             } else {
                 // Was Module 2 of RW in a full exam -> transition to Math Module 1.
                 $nextsection = 'math';
                 $nextstage = 'm1';
+                $nextmodule = $DB->get_record('sat_modules', [
+                    'satid' => $sat->id,
+                    'section' => $nextsection,
+                    'stage' => $nextstage,
+                ]);
             }
-
-            $nextmodule = $DB->get_record('sat_modules', [
-                'satid' => $sat->id,
-                'section' => $nextsection,
-                'stage' => $nextstage,
-            ]);
 
             if ($nextmodule) {
                 // Add next module's questions into question usage.
                 $nextslots = structure_manager::get_slots($nextmodule->id);
-                $firstslotnum = 1;
-                $lastslotnum = 1;
+                $firstslotnum = ((int)$modattempt->lastslot > 0) ? ((int)$modattempt->lastslot + 1) : 1;
+                $lastslotnum = $firstslotnum;
+                $nextmaxscore = 0.0;
 
                 if (!empty($nextslots)) {
                     $isfirstslot = true;
                     foreach ($nextslots as $ns) {
+                        if (!empty($ns->is_scored)) {
+                            $nextmaxscore += (float)$ns->maxmark;
+                        }
                         if (!empty($ns->questionid)) {
                             $loadedq = question_bank::load_question($ns->questionid);
                             $qslot = $quba->add_question($loadedq, (float)$ns->maxmark);
@@ -399,29 +648,36 @@ class attempt_manager {
                 }
 
                 // Calculate accommodation multiplier for next module.
-                $override = $DB->get_record('sat_overrides', ['satid' => $sat->id, 'userid' => $attempt->userid]);
-                $multiplier = $override ? (float)$override->timemultiplier : 1.0;
+                $multiplier = self::get_time_multiplier((int)$sat->id, (int)$attempt->userid);
                 $timelimit = (int) round($nextmodule->timelimit * $multiplier);
 
                 $nextmodattempt = new stdClass();
                 $nextmodattempt->attemptid = $attempt->id;
                 $nextmodattempt->moduleid = $nextmodule->id;
-                $nextmodattempt->state = ($sat->pacing_mode === 'paced') ? 'paused' : 'inprogress';
+                $nextmodattempt->state = ($sat->pacing_mode === 'paced') ? self::STATE_PAUSED : self::STATE_INPROGRESS;
                 $nextmodattempt->firstslot = $firstslotnum;
                 $nextmodattempt->lastslot = $lastslotnum;
                 $nextmodattempt->timestart = $now;
                 $nextmodattempt->timedeadline = $now + $timelimit;
                 $nextmodattempt->timefinish = 0;
                 $nextmodattempt->rawscore = 0.0;
-                $nextmodattempt->maxscore = 0.0;
+                $nextmodattempt->maxscore = $nextmaxscore;
                 $DB->insert_record('sat_module_attempts', $nextmodattempt);
 
                 $attempt->currentstage = $nextsection . '_' . $nextstage;
+            } else {
+                // Guard: Finalize cleanly instead of leaving an orphaned inprogress attempt.
+                $attempt->state = self::STATE_FINISHED;
+                $attempt->timefinish = $now;
+                $nextaction = 'finish';
+                self::finalize_attempt_scoring($sat, $attempt);
             }
         }
 
         $attempt->timemodified = $now;
         $DB->update_record('sat_attempts', $attempt);
+
+        $transaction->allow_commit();
 
         return [$attempt, $nextaction];
     }
@@ -498,7 +754,9 @@ class attempt_manager {
         $totalcomposite = scorer::calculate_composite_score($scaledrw, $scaledmath, $sat->exam_scope);
         $attempt->scaled_total = $totalcomposite;
 
-        // Push to Moodle Gradebook.
-        scorer::update_final_grade($sat, $attempt->userid, $totalcomposite, $scaledrw, $scaledmath);
+        // Push to Moodle Gradebook only for student attempts (exclude teacher previews).
+        if (empty($attempt->preview)) {
+            scorer::update_final_grade($sat, $attempt->userid, $totalcomposite, $scaledrw, $scaledmath);
+        }
     }
 }

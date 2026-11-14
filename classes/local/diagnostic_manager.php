@@ -102,9 +102,16 @@ class diagnostic_manager {
 
             foreach ($modattempts as $modattempt) {
                 $slots = structure_manager::get_slots((int)$modattempt->moduleid);
-                $usageslot = (int)$modattempt->firstslot;
+                $usageslot = ((int)$modattempt->firstslot > 0) ? (int)$modattempt->firstslot : 1;
 
                 foreach ($slots as $slot) {
+                    if (empty($slot->is_scored)) {
+                        if (!empty($slot->questionid)) {
+                            $usageslot++;
+                        }
+                        continue;
+                    }
+
                     $studentresponse = isset($slotstates[$usageslot])
                         ? (string)($slotstates[$usageslot]->response ?? '')
                         : '';
@@ -113,7 +120,9 @@ class diagnostic_manager {
                     $iscorrect = ($maxmark > 0 && ($earned / $maxmark) >= 0.99);
 
                     self::accumulate_question_domain($results, (int)$slot->questionid, $iscorrect);
-                    $usageslot++;
+                    if (!empty($slot->questionid)) {
+                        $usageslot++;
+                    }
                 }
             }
         } else if (!empty($attempt->uniqueid) && class_exists('question_engine')) {
@@ -212,6 +221,7 @@ class diagnostic_manager {
         $attempts = $DB->get_records('sat_attempts', [
             'satid' => $satid,
             'state' => 'finished',
+            'preview' => 0,
         ]);
 
         $totalattempts = count($attempts);
@@ -278,32 +288,61 @@ class diagnostic_manager {
     public static function get_cohort_score_distribution(int $satid): array {
         global $DB;
 
+        $sat = $DB->get_record('sat', ['id' => $satid], 'id, exam_scope');
+        $issinglesection = ($sat && $sat->exam_scope !== 'full');
+
         $attempts = $DB->get_records('sat_attempts', [
             'satid' => $satid,
             'state' => 'finished',
+            'preview' => 0,
         ]);
 
         $totalattempts = count($attempts);
-        $buckets = [
-            '1400-1600' => 0,
-            '1200-1390' => 0,
-            '1000-1190' => 0,
-            '800-990' => 0,
-            '400-790' => 0,
-        ];
+        if ($issinglesection) {
+            $buckets = [
+                '700-800' => 0,
+                '600-690' => 0,
+                '500-590' => 0,
+                '400-490' => 0,
+                '200-390' => 0,
+            ];
 
-        foreach ($attempts as $a) {
-            $score = (int)$a->scaled_total;
-            if ($score >= 1400) {
-                $buckets['1400-1600']++;
-            } else if ($score >= 1200) {
-                $buckets['1200-1390']++;
-            } else if ($score >= 1000) {
-                $buckets['1000-1190']++;
-            } else if ($score >= 800) {
-                $buckets['800-990']++;
-            } else {
-                $buckets['400-790']++;
+            foreach ($attempts as $a) {
+                $score = (int)$a->scaled_total;
+                if ($score >= 700) {
+                    $buckets['700-800']++;
+                } else if ($score >= 600) {
+                    $buckets['600-690']++;
+                } else if ($score >= 500) {
+                    $buckets['500-590']++;
+                } else if ($score >= 400) {
+                    $buckets['400-490']++;
+                } else {
+                    $buckets['200-390']++;
+                }
+            }
+        } else {
+            $buckets = [
+                '1400-1600' => 0,
+                '1200-1390' => 0,
+                '1000-1190' => 0,
+                '800-990' => 0,
+                '400-790' => 0,
+            ];
+
+            foreach ($attempts as $a) {
+                $score = (int)$a->scaled_total;
+                if ($score >= 1400) {
+                    $buckets['1400-1600']++;
+                } else if ($score >= 1200) {
+                    $buckets['1200-1390']++;
+                } else if ($score >= 1000) {
+                    $buckets['1000-1190']++;
+                } else if ($score >= 800) {
+                    $buckets['800-990']++;
+                } else {
+                    $buckets['400-790']++;
+                }
             }
         }
 
@@ -332,6 +371,7 @@ class diagnostic_manager {
         $attempts = $DB->get_records('sat_attempts', [
             'satid' => $satid,
             'state' => 'finished',
+            'preview' => 0,
         ]);
 
         $domains = [];

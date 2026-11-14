@@ -40,8 +40,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'mod_sat/calculator'], funct
             var self = this;
             this.config = config;
 
-            // Initialize built-in calculator.
-            Calculator.init();
+            // Initialize built-in calculator with site policy flags.
+            Calculator.init(this.config);
 
             // Restore local accessibility preferences.
             this.restoreAccessibilityPrefs();
@@ -187,6 +187,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'mod_sat/calculator'], funct
             }]);
 
             promises[0].done(function(data) {
+                if (data.state !== 'inprogress') {
+                    window.location.href = M.cfg.wwwroot + '/mod/sat/view.php?id=' + self.config.cmid;
+                    return;
+                }
                 self.attemptData = data;
                 self.remainingSeconds = data.timeremaining;
                 self.responses = {};

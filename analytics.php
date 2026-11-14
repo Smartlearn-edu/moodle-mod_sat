@@ -123,10 +123,10 @@ if ($metrics['totalattempts'] === 0) {
         echo html_writer::end_div();
 
         $barclass = match ($item['range']) {
-            '1400-1600' => 'bg-success',
-            '1200-1390' => 'bg-primary',
-            '1000-1190' => 'bg-info',
-            '800-990' => 'bg-warning',
+            '1400-1600', '700-800' => 'bg-success',
+            '1200-1390', '600-690' => 'bg-primary',
+            '1000-1190', '500-590' => 'bg-info',
+            '800-990', '400-490' => 'bg-warning',
             default => 'bg-danger',
         };
 

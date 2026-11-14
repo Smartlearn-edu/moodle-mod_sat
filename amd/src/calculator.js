@@ -27,13 +27,34 @@ define(['jquery'], function($) {
         currentExpression: '0',
         mode: 'scientific', // 'scientific' or 'graphing'
 
-        init: function() {
+        init: function(config) {
             var self = this;
+            var enableGraphing = !config || config.enableGraphingCalc !== false;
+            var enableScientific = !config || config.enableScientificCalc !== false;
+
+            if (!enableGraphing && !enableScientific) {
+                $('#sat-btn-calculator').addClass('d-none');
+                $('#sat-calculator-panel').addClass('d-none');
+                return;
+            }
+
+            if (!enableGraphing) {
+                $('#sat-calc-mode-toggle').addClass('d-none');
+            } else if (!enableScientific) {
+                self.mode = 'graphing';
+                $('#sat-calc-mode-toggle').addClass('d-none');
+                $('#sat-calc-scientific').addClass('d-none');
+                $('#sat-calc-graphing').removeClass('d-none');
+                self.renderGraph();
+            }
 
             // Calculator toggle button.
             $('#sat-btn-calculator').on('click', function(e) {
                 e.preventDefault();
                 $('#sat-calculator-panel').toggleClass('d-none');
+                if (self.mode === 'graphing' && !$('#sat-calculator-panel').hasClass('d-none')) {
+                    self.renderGraph();
+                }
             });
 
             // Close button.
@@ -87,6 +108,14 @@ define(['jquery'], function($) {
                 .replace(/\^/g, '**');
         },
 
+        isSafeExpression: function(expr) {
+            if (typeof expr !== 'string' || expr.trim() === '') {
+                return false;
+            }
+            var stripped = expr.replace(/Math\.(?:sin|cos|tan|sqrt|log10|log|PI|E|abs|pow)\b/g, '');
+            return /^[0-9+\-*/().\s,]+$/.test(stripped);
+        },
+
         handleButton: function(val) {
             var screen = $('#sat-calc-screen');
 
@@ -102,6 +131,9 @@ define(['jquery'], function($) {
                 try {
                     // Safe basic arithmetic evaluation with implicit multiplication support.
                     var expr = this.normalizeExpression(this.currentExpression);
+                    if (!this.isSafeExpression(expr)) {
+                        throw new Error('Unsafe expression');
+                    }
 
                     /* eslint-disable no-eval */
                     var result = eval(expr);
@@ -174,6 +206,9 @@ define(['jquery'], function($) {
             // Parse and plot function y = f(x).
             var rawFn = $('#sat-graph-function').val() || 'x^2 - 4';
             var jsFn = this.normalizeExpression(rawFn);
+            if (!this.isSafeExpression(jsFn.replace(/\bx\b/g, '(1)'))) {
+                return;
+            }
 
             ctx.strokeStyle = '#2563eb';
             ctx.lineWidth = 2.5;
@@ -183,7 +218,7 @@ define(['jquery'], function($) {
             for (var px = 0; px <= width; px += 2) {
                 var mathX = (px - originX) / scale;
                 try {
-                    var expr = jsFn.replace(/x/g, '(' + mathX + ')');
+                    var expr = jsFn.replace(/\bx\b/g, '(' + mathX + ')');
                     /* eslint-disable no-eval */
                     var mathY = eval(expr);
                     /* eslint-enable no-eval */

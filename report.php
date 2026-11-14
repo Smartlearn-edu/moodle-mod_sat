@@ -108,9 +108,18 @@ if (empty($attempts)) {
         }
         $actionstr = implode(' ', $actions);
 
+        $attlabel = (string)$att->attempt;
+        if (!empty($att->preview)) {
+            $attlabel .= ' ' . html_writer::tag(
+                'span',
+                get_string('preview_badge', 'mod_sat'),
+                ['class' => 'badge bg-info text-dark ms-1']
+            );
+        }
+
         $table->data[] = [
             $userlink,
-            $att->attempt,
+            $attlabel,
             $statestr,
             $rwstr,
             $mathstr,

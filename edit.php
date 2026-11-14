@@ -165,8 +165,15 @@ if ($action === 'add' && confirm_sesskey()) {
 }
 
 $modules = \mod_sat\local\structure_manager::get_modules($sat->id);
-if (empty($modules)) {
-    // If not provisioned yet, provision now.
+$hasfixedm2 = false;
+foreach ($modules as $modcheck) {
+    if ($modcheck->stage === 'm2_fixed') {
+        $hasfixedm2 = true;
+        break;
+    }
+}
+if (empty($modules) || (($sat->routing_mode ?? 'adaptive') === 'fixed' && !$hasfixedm2)) {
+    // Provision any missing modules for initial setup or fixed routing mode.
     sat_provision_default_modules($sat);
     $modules = \mod_sat\local\structure_manager::get_modules($sat->id);
 }
@@ -185,16 +192,31 @@ $PAGE->requires->js_call_amd('mod_sat/question_picker', 'init');
 echo $OUTPUT->header();
 echo $OUTPUT->heading(get_string('managequestions', 'mod_sat') . ' — ' . format_string($sat->name));
 
-// Render module tabs.
+// Render module tabs with active/unused indicator based on routing mode.
+$routingmode = $sat->routing_mode ?? 'adaptive';
 echo html_writer::start_tag('ul', ['class' => 'nav nav-pills mb-4 gap-2']);
 foreach ($modules as $m) {
     $isactive = ($m->id == $selectedmoduleid);
     $stagestr = get_string('stage_' . $m->stage, 'mod_sat');
     $secstr = strtoupper($m->section);
-    $label = "$secstr: $stagestr";
+    $isused = true;
+    if ($routingmode === 'fixed' && in_array($m->stage, ['m2_easy', 'm2_hard'], true)) {
+        $isused = false;
+    } else if ($routingmode === 'adaptive' && $m->stage === 'm2_fixed') {
+        $isused = false;
+    }
+
+    $badge = $isused
+        ? ''
+        : ' ' . html_writer::tag(
+            'span',
+            get_string('routing_inactive_badge', 'mod_sat'),
+            ['class' => 'badge bg-secondary ms-1']
+        );
+    $label = "$secstr: $stagestr" . $badge;
 
     $link = $buildediturl((int)$m->id);
-    $btnclass = $isactive ? 'nav-link active' : 'nav-link';
+    $btnclass = $isactive ? 'nav-link active' : ($isused ? 'nav-link' : 'nav-link text-muted opacity-75');
     echo html_writer::tag('li', html_writer::link($link, $label, ['class' => $btnclass]), ['class' => 'nav-item']);
 }
 echo html_writer::end_tag('ul');

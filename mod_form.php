@@ -36,6 +36,16 @@ class mod_sat_mod_form extends moodleform_mod {
      */
     public function definition() {
         $mform = $this->_form;
+        $config = get_config('mod_sat');
+        $defaultscope = !empty($config->default_scope) ? $config->default_scope : 'full';
+        $defaultpacing = !empty($config->default_pacing) ? $config->default_pacing : 'continuous';
+        $defaultrw = (isset($config->default_threshold_rw) && $config->default_threshold_rw !== '')
+            ? (int)$config->default_threshold_rw
+            : 60;
+        $defaultmath = (isset($config->default_threshold_math) && $config->default_threshold_math !== '')
+            ? (int)$config->default_threshold_math
+            : 60;
+        $defaultgrade = ($defaultscope === 'full') ? 1600 : 800;
 
         // General settings.
         $mform->addElement('header', 'general', get_string('general', 'form'));
@@ -61,7 +71,7 @@ class mod_sat_mod_form extends moodleform_mod {
             'single_module' => get_string('scope_single_module', 'mod_sat'),
         ];
         $mform->addElement('select', 'exam_scope', get_string('exam_scope', 'mod_sat'), $scopes);
-        $mform->setDefault('exam_scope', 'full');
+        $mform->setDefault('exam_scope', $defaultscope);
         $mform->addHelpButton('exam_scope', 'exam_scope', 'mod_sat');
 
         $pacings = [
@@ -69,7 +79,7 @@ class mod_sat_mod_form extends moodleform_mod {
             'paced' => get_string('pacing_paced', 'mod_sat'),
         ];
         $mform->addElement('select', 'pacing_mode', get_string('pacing_mode', 'mod_sat'), $pacings);
-        $mform->setDefault('pacing_mode', 'continuous');
+        $mform->setDefault('pacing_mode', $defaultpacing);
         $mform->addHelpButton('pacing_mode', 'pacing_mode', 'mod_sat');
 
         $routings = [
@@ -82,12 +92,12 @@ class mod_sat_mod_form extends moodleform_mod {
 
         $mform->addElement('text', 'threshold_rw', get_string('threshold_rw', 'mod_sat'), ['size' => '4']);
         $mform->setType('threshold_rw', PARAM_INT);
-        $mform->setDefault('threshold_rw', 60);
+        $mform->setDefault('threshold_rw', $defaultrw);
         $mform->addHelpButton('threshold_rw', 'threshold_rw', 'mod_sat');
 
         $mform->addElement('text', 'threshold_math', get_string('threshold_math', 'mod_sat'), ['size' => '4']);
         $mform->setType('threshold_math', PARAM_INT);
-        $mform->setDefault('threshold_math', 60);
+        $mform->setDefault('threshold_math', $defaultmath);
         $mform->addHelpButton('threshold_math', 'threshold_math', 'mod_sat');
 
         // Timing.
@@ -128,13 +138,48 @@ class mod_sat_mod_form extends moodleform_mod {
 
         $mform->addElement('text', 'grade', get_string('maxgrade', 'mod_sat'), ['size' => '6']);
         $mform->setType('grade', PARAM_INT);
-        $mform->setDefault('grade', 1600);
+        $mform->setDefault('grade', $defaultgrade);
         $mform->addHelpButton('grade', 'maxgrade', 'mod_sat');
+
+        $reviewopts = [
+            SAT_REVIEW_IMMEDIATE => get_string('review_immediate', 'mod_sat'),
+            SAT_REVIEW_AFTERCLOSE => get_string('review_afterclose', 'mod_sat'),
+            SAT_REVIEW_SCORESONLY => get_string('review_scoresonly', 'mod_sat'),
+        ];
+        $mform->addElement('select', 'reviewoptions', get_string('reviewoptions', 'mod_sat'), $reviewopts);
+        $mform->setDefault('reviewoptions', SAT_REVIEW_IMMEDIATE);
+        $mform->addHelpButton('reviewoptions', 'reviewoptions', 'mod_sat');
 
         // Standard coursemodule elements.
         $this->standard_coursemodule_elements();
 
         // Action buttons (Save and return, Save and display, Cancel).
         $this->add_action_buttons();
+    }
+
+    /**
+     * Validates activity configuration inputs.
+     *
+     * @param array $data Submitted form data
+     * @param array $files Uploaded files
+     * @return array Validation errors keyed by field name
+     */
+    public function validation($data, $files) {
+        $errors = parent::validation($data, $files);
+
+        if (isset($data['threshold_rw']) && ($data['threshold_rw'] < 0 || $data['threshold_rw'] > 100)) {
+            $errors['threshold_rw'] = get_string('error_threshold_range', 'mod_sat');
+        }
+        if (isset($data['threshold_math']) && ($data['threshold_math'] < 0 || $data['threshold_math'] > 100)) {
+            $errors['threshold_math'] = get_string('error_threshold_range', 'mod_sat');
+        }
+        if (!empty($data['timeopen']) && !empty($data['timeclose']) && $data['timeclose'] <= $data['timeopen']) {
+            $errors['timeclose'] = get_string('error_timeclose', 'mod_sat');
+        }
+        if (isset($data['grade']) && (int)$data['grade'] < 0) {
+            $errors['grade'] = get_string('err_numeric', 'form');
+        }
+
+        return $errors;
     }
 }

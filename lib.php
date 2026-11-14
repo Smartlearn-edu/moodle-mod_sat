@@ -32,6 +32,11 @@ define('SAT_GRADEAVERAGE', 2);
 define('SAT_ATTEMPTFIRST', 3);
 define('SAT_ATTEMPTLAST', 4);
 
+/** Review option constants */
+define('SAT_REVIEW_IMMEDIATE', 0);
+define('SAT_REVIEW_AFTERCLOSE', 1);
+define('SAT_REVIEW_SCORESONLY', 2);
+
 /**
  * Check if the module supports a specific feature.
  *
@@ -78,8 +83,8 @@ function sat_add_instance($data, $mform = null) {
     $data->timecreated = time();
     $data->timemodified = $data->timecreated;
 
-    // Default max grade based on scope if not explicitly overridden.
-    if (empty($data->grade)) {
+    // Default max grade based on scope if left empty or kept at 1600 on single-section scopes.
+    if (empty($data->grade) || ($data->exam_scope !== 'full' && (int)$data->grade === 1600)) {
         $data->grade = ($data->exam_scope === 'full') ? 1600 : 800;
     }
 
@@ -109,6 +114,9 @@ function sat_update_instance($data, $mform = null) {
     $data->timemodified = time();
 
     $DB->update_record('sat', $data);
+
+    // Provision any newly required modules if scope or routing mode changed.
+    sat_provision_default_modules($data);
 
     // Update Gradebook settings.
     sat_grade_item_update($data);
@@ -179,6 +187,7 @@ function sat_provision_default_modules($sat) {
 
     $modules = [];
     $sortorder = 1;
+    $isfixed = (($sat->routing_mode ?? 'adaptive') === 'fixed');
 
     if ($sat->exam_scope === 'full' || $sat->exam_scope === 'rw_only') {
         // Reading & Writing Module 1.
@@ -208,6 +217,17 @@ function sat_provision_default_modules($sat) {
             'questioncount' => 27,
             'sortorder' => $sortorder++,
         ];
+        if ($isfixed) {
+            // Reading & Writing Module 2 (Standard / Fixed).
+            $modules[] = (object) [
+                'satid' => $sat->id,
+                'section' => 'rw',
+                'stage' => 'm2_fixed',
+                'timelimit' => 1920,
+                'questioncount' => 27,
+                'sortorder' => $sortorder++,
+            ];
+        }
     }
 
     if ($sat->exam_scope === 'full' || $sat->exam_scope === 'math_only') {
@@ -238,6 +258,17 @@ function sat_provision_default_modules($sat) {
             'questioncount' => 22,
             'sortorder' => $sortorder++,
         ];
+        if ($isfixed) {
+            // Math Module 2 (Standard / Fixed).
+            $modules[] = (object) [
+                'satid' => $sat->id,
+                'section' => 'math',
+                'stage' => 'm2_fixed',
+                'timelimit' => 2100,
+                'questioncount' => 22,
+                'sortorder' => $sortorder++,
+            ];
+        }
     }
 
     if ($sat->exam_scope === 'single_module') {
@@ -253,7 +284,14 @@ function sat_provision_default_modules($sat) {
     }
 
     foreach ($modules as $mod) {
-        $DB->insert_record('sat_modules', $mod);
+        $exists = $DB->record_exists('sat_modules', [
+            'satid' => $sat->id,
+            'section' => $mod->section,
+            'stage' => $mod->stage,
+        ]);
+        if (!$exists) {
+            $DB->insert_record('sat_modules', $mod);
+        }
     }
 }
 
@@ -316,15 +354,46 @@ function sat_grade_item_delete($sat) {
  * @param array $options additional options
  * @return bool false if file not found
  */
-function mod_sat_question_pluginfile($course, $context, $component, $filearea, $qubaid, $slot, $args, $forcedownload, array $options = []) {
-    global $DB;
+function mod_sat_question_pluginfile(
+    $course,
+    $context,
+    $component,
+    $filearea,
+    $qubaid,
+    $slot,
+    $args,
+    $forcedownload,
+    array $options = []
+) {
+    global $DB, $USER;
 
-    // Check that user is logged in.
-    require_login($course, false);
-
-    if (!question_engine::is_qubaid_condition($qubaid)) {
-        return false;
+    $attempt = $DB->get_record('sat_attempts', ['uniqueid' => (int)$qubaid]);
+    if (!$attempt) {
+        send_file_not_found();
     }
 
-    return question_send_question_file($context, $component, $filearea, $qubaid, $slot, $args, $forcedownload, $options);
+    $sat = $DB->get_record('sat', ['id' => $attempt->satid], '*', MUST_EXIST);
+    $satcourse = $DB->get_record('course', ['id' => $sat->course], '*', MUST_EXIST);
+    $cm = get_coursemodule_from_instance('sat', $sat->id, $satcourse->id, false, MUST_EXIST);
+
+    require_login($satcourse, false, $cm);
+
+    $modcontext = context_module::instance($cm->id);
+    if (
+        $attempt->userid != $USER->id
+        && !has_capability('mod/sat:viewreports', $modcontext)
+        && !has_capability('mod/sat:manage', $modcontext)
+    ) {
+        send_file_not_found();
+    }
+
+    $fs = get_file_storage();
+    $relativepath = implode('/', $args);
+    $fullpath = "/{$context->id}/{$component}/{$filearea}/{$relativepath}";
+    $file = $fs->get_file_by_hash(sha1($fullpath));
+    if (!$file || $file->is_directory()) {
+        send_file_not_found();
+    }
+
+    send_stored_file($file, 0, 0, $forcedownload, $options);
 }
