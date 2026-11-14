@@ -43,6 +43,29 @@ class close_overdue_modules extends scheduled_task {
         global $DB;
 
         $now = time();
+
+        // Transition any expired scheduled breaks so the Math timer begins accurately.
+        $breaksql = "SELECT ma.id AS modattemptid, ma.attemptid
+                       FROM {sat_module_attempts} ma
+                       JOIN {sat_attempts} a ON a.id = ma.attemptid
+                      WHERE ma.state = :breakstate
+                        AND a.state = :inprogress
+                        AND ma.timedeadline < :now";
+        $expiredbreaks = $DB->get_records_sql($breaksql, [
+            'breakstate' => attempt_manager::STATE_BREAK,
+            'inprogress' => attempt_manager::STATE_INPROGRESS,
+            'now' => $now,
+        ]);
+
+        foreach ($expiredbreaks as $row) {
+            try {
+                attempt_manager::end_break((int)$row->attemptid, (int)$row->modattemptid);
+                mtrace("  - Ended expired break for module attempt ID: " . $row->modattemptid);
+            } catch (\Throwable $e) {
+                mtrace("  - Failed to end break for module attempt ID: " . $row->modattemptid . " Error: " . $e->getMessage());
+            }
+        }
+
         $sql = "SELECT ma.id AS modattemptid, ma.attemptid
                   FROM {sat_module_attempts} ma
                   JOIN {sat_attempts} a ON a.id = ma.attemptid

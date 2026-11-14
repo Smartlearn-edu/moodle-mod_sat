@@ -99,6 +99,10 @@ if (!$canview || !$showdetails) {
         );
     }
     echo html_writer::end_div();
+    echo html_writer::div(
+        s(get_string('disclaimer', 'mod_sat')),
+        'sat-disclaimer text-muted small text-center mt-4 pt-3 border-top'
+    );
     echo $OUTPUT->footer();
     exit;
 }
@@ -293,5 +297,10 @@ echo html_writer::link(
     ['class' => 'btn btn-outline-primary px-4']
 );
 echo html_writer::end_div();
+
+echo html_writer::div(
+    s(get_string('disclaimer', 'mod_sat')),
+    'sat-disclaimer text-muted small text-center mt-4 pt-3 border-top'
+);
 
 echo $OUTPUT->footer();

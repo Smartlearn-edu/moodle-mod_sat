@@ -95,9 +95,25 @@ class attempt_api extends external_api {
         }
 
         $module = $DB->get_record('sat_modules', ['id' => $modattempt->moduleid], '*', MUST_EXIST);
+        $isonbreak = ($modattempt && $modattempt->state === attempt_manager::STATE_BREAK);
 
         // Server-authoritative remaining time.
         $timeremaining = max(0, (int)$modattempt->timedeadline - $now);
+        if ($isonbreak) {
+            return [
+                'attemptid' => (int)$attempt->id,
+                'state' => (string)$attempt->state,
+                'currentstage' => (string)$attempt->currentstage,
+                'modattemptid' => (int)$modattempt->id,
+                'section' => (string)$module->section,
+                'stage' => (string)$module->stage,
+                'onbreak' => true,
+                'breakremaining' => $timeremaining,
+                'timeremaining' => $timeremaining,
+                'slots' => [],
+                'slot_states' => [],
+            ];
+        }
 
         // Load questions in this module.
         $slots = structure_manager::get_slots($module->id);
@@ -179,6 +195,8 @@ class attempt_api extends external_api {
             'modattemptid' => (int)$modattempt->id,
             'section' => (string)$module->section,
             'stage' => (string)$module->stage,
+            'onbreak' => false,
+            'breakremaining' => 0,
             'timeremaining' => $timeremaining,
             'slots' => $formattedslots,
             'slot_states' => $formattedstates,
@@ -198,6 +216,8 @@ class attempt_api extends external_api {
             'modattemptid' => new external_value(PARAM_INT, 'Module attempt ID'),
             'section' => new external_value(PARAM_ALPHA, 'Section'),
             'stage' => new external_value(PARAM_ALPHANUMEXT, 'Stage'),
+            'onbreak' => new external_value(PARAM_BOOL, 'Whether attempt is in scheduled break', VALUE_DEFAULT, false),
+            'breakremaining' => new external_value(PARAM_INT, 'Break time remaining in seconds', VALUE_DEFAULT, 0),
             'timeremaining' => new external_value(PARAM_INT, 'Time remaining in seconds'),
             'slots' => new external_multiple_structure(
                 new external_single_structure([
@@ -402,7 +422,65 @@ class attempt_api extends external_api {
     public static function submit_module_returns(): external_single_structure {
         return new external_single_structure([
             'status' => new external_value(PARAM_BOOL, 'Submission status'),
-            'nextaction' => new external_value(PARAM_ALPHA, 'Next action: continue, pause, or finish'),
+            'nextaction' => new external_value(PARAM_ALPHA, 'Next action: continue, break, pause, or finish'),
+        ]);
+    }
+
+    /**
+     * Parameters for end_break.
+     *
+     * @return external_function_parameters
+     */
+    public static function end_break_parameters(): external_function_parameters {
+        return new external_function_parameters([
+            'attemptid' => new external_value(PARAM_INT, 'SAT attempt ID'),
+            'modattemptid' => new external_value(PARAM_INT, 'Module attempt ID', VALUE_DEFAULT, 0),
+        ]);
+    }
+
+    /**
+     * Ends the scheduled inter-section break and begins the Math section timer.
+     *
+     * @param int $attemptid Attempt ID
+     * @param int $modattemptid Optional module attempt ID
+     * @return array
+     */
+    public static function end_break(int $attemptid, int $modattemptid = 0): array {
+        global $DB, $USER;
+
+        $params = self::validate_parameters(self::end_break_parameters(), [
+            'attemptid' => $attemptid,
+            'modattemptid' => $modattemptid,
+        ]);
+
+        $attempt = $DB->get_record('sat_attempts', ['id' => $params['attemptid']], '*', MUST_EXIST);
+        $sat = $DB->get_record('sat', ['id' => $attempt->satid], '*', MUST_EXIST);
+        $cm = get_coursemodule_from_instance('sat', $sat->id, $sat->course, false, MUST_EXIST);
+
+        $context = context_module::instance($cm->id);
+        self::validate_context($context);
+
+        if ($attempt->userid != $USER->id) {
+            throw new moodle_exception('nopermissions', 'error');
+        }
+
+        $modattempt = attempt_manager::end_break((int)$attempt->id, (int)$params['modattemptid']);
+
+        return [
+            'status' => true,
+            'modattemptid' => (int)$modattempt->id,
+        ];
+    }
+
+    /**
+     * Returns description for end_break.
+     *
+     * @return external_single_structure
+     */
+    public static function end_break_returns(): external_single_structure {
+        return new external_single_structure([
+            'status' => new external_value(PARAM_BOOL, 'Break transition status'),
+            'modattemptid' => new external_value(PARAM_INT, 'Active module attempt ID'),
         ]);
     }
 }

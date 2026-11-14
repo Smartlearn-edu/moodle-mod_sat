@@ -28,7 +28,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'mod_sat/calculator'], funct
         attemptData: null,
         currentIndex: 0,
         timerInterval: null,
+        breakInterval: null,
         remainingSeconds: 0,
+        isBreakActive: false,
+        isSubmitting: false,
         responses: {},
         eliminations: {},
         flagged: {},
@@ -113,7 +116,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'mod_sat/calculator'], funct
             // Accessibility & Display options gear menu.
             $('#sat-btn-more').on('click', function(e) {
                 e.preventDefault();
-                $('#sat-annotate-panel').addClass('d-none');
+                $('#sat-annotate-panel, #sat-directions-panel').addClass('d-none');
                 self.annotateMode = false;
                 self.updateAnnotateButtonState();
                 $('#sat-options-panel').toggleClass('d-none');
@@ -130,7 +133,35 @@ define(['jquery', 'core/ajax', 'core/notification', 'mod_sat/calculator'], funct
                 self.applyHighContrast($(this).is(':checked'));
             });
 
-            // Close open modals/drawers on Escape key.
+            // Section Directions panel toggles.
+            $('#sat-btn-directions').on('click', function(e) {
+                e.preventDefault();
+                self.toggleDirectionsPanel();
+            });
+            $('#sat-directions-close').on('click', function(e) {
+                e.preventDefault();
+                $('#sat-directions-panel').addClass('d-none');
+            });
+
+            // Scheduled Break resume button.
+            $('#sat-btn-end-break').on('click', function(e) {
+                e.preventDefault();
+                self.endBreak();
+            });
+
+            // In-app Check Your Work review overlay buttons.
+            $('#sat-btn-review-back').on('click', function(e) {
+                e.preventDefault();
+                if (!self.isSubmitting) {
+                    $('#sat-review-overlay').addClass('d-none');
+                }
+            });
+            $('#sat-btn-review-confirm').on('click', function(e) {
+                e.preventDefault();
+                self.submitModule();
+            });
+
+            // Close open panels on Escape and support exam keyboard shortcuts.
             $(document).on('keydown', function(e) {
                 if (e.key === 'Escape') {
                     if ($('#sat-formulas-modal').hasClass('show')) {
@@ -139,8 +170,26 @@ define(['jquery', 'core/ajax', 'core/notification', 'mod_sat/calculator'], funct
                     if (!$('#sat-annotate-panel').hasClass('d-none')) {
                         self.closeAnnotatePanel();
                     }
-                    $('#sat-options-panel').addClass('d-none');
-                    $('#sat-matrix-drawer').addClass('d-none');
+                    $('#sat-options-panel, #sat-directions-panel, #sat-matrix-drawer').addClass('d-none');
+                    if (!self.isSubmitting && !$('#sat-review-overlay').hasClass('d-none')) {
+                        $('#sat-review-overlay').addClass('d-none');
+                    }
+                    return;
+                }
+
+                if (!self.isBreakActive && !self.isSubmitting && $('#sat-review-overlay').hasClass('d-none')) {
+                    var tagName = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
+                    var isTyping = (tagName === 'input' || tagName === 'textarea');
+                    if (e.altKey && e.key === 'ArrowRight') {
+                        e.preventDefault();
+                        self.handleNext();
+                    } else if (e.altKey && e.key === 'ArrowLeft') {
+                        e.preventDefault();
+                        self.handlePrev();
+                    } else if (e.altKey && (e.key === 'f' || e.key === 'F') && !isTyping) {
+                        e.preventDefault();
+                        self.toggleFlag();
+                    }
                 }
             });
 
@@ -192,7 +241,31 @@ define(['jquery', 'core/ajax', 'core/notification', 'mod_sat/calculator'], funct
                     return;
                 }
                 self.attemptData = data;
+                self.isSubmitting = false;
+                $('#sat-transition-status').addClass('d-none').text('');
+                $('#sat-btn-review-back, #sat-btn-review-confirm').prop('disabled', false);
+
+                if (data.onbreak) {
+                    self.showBreakScreen(data.breakremaining || data.timeremaining || 0);
+                    return;
+                }
+
+                if (self.breakInterval) {
+                    clearInterval(self.breakInterval);
+                    self.breakInterval = null;
+                }
+                self.isBreakActive = false;
+                $('#sat-break-screen').addClass('d-none').removeClass('d-flex');
+                $('#sat-review-overlay').addClass('d-none');
+                $('#sat-question-pane, .sat-bottom-bar').removeClass('d-none');
+                $('#sat-btn-annotate, #sat-btn-directions, #sat-btn-top-submit').removeClass('d-none');
+                self.closeAnnotatePanel();
+
                 self.remainingSeconds = data.timeremaining;
+                if (self.remainingSeconds >= 300) {
+                    $('#sat-timer-display').removeClass('d-none text-danger border-danger').addClass('text-warning');
+                    $('#sat-timer-toggle').removeClass('d-none').text('Hide');
+                }
                 self.responses = {};
                 self.eliminations = {};
                 self.flagged = {};
@@ -224,12 +297,14 @@ define(['jquery', 'core/ajax', 'core/notification', 'mod_sat/calculator'], funct
                     });
                 }
 
-                // Update headers.
+                // Update headers, section toolbar gating, and directions.
                 var sectionLabel = (data.section === 'rw') ? 'Reading and Writing' : 'Math';
                 var stageLabel = (data.stage === 'm1') ? 'Module 1 of 2' : 'Module 2 of 2';
 
                 $('#sat-stage-badge').text(stageLabel);
                 $('#sat-section-title').text(sectionLabel);
+                self.applySectionToolbar(data.section);
+                self.updateSectionDirections(data.section);
 
                 // Start timer.
                 self.startTimer();
@@ -241,33 +316,182 @@ define(['jquery', 'core/ajax', 'core/notification', 'mod_sat/calculator'], funct
             }).fail(Notification.exception);
         },
 
+        applySectionToolbar: function(section) {
+            var isMath = (section === 'math');
+            var calcAllowed = !this.config
+                || this.config.enableGraphingCalc !== false
+                || this.config.enableScientificCalc !== false;
+
+            if (!isMath) {
+                $('#sat-btn-calculator').addClass('d-none');
+                $('#sat-calculator-panel').addClass('d-none');
+                $('#sat-btn-formulas').addClass('d-none');
+                this.closeFormulasModal();
+            } else {
+                $('#sat-btn-formulas').removeClass('d-none');
+                if (calcAllowed) {
+                    $('#sat-btn-calculator').removeClass('d-none');
+                } else {
+                    $('#sat-btn-calculator').addClass('d-none');
+                    $('#sat-calculator-panel').addClass('d-none');
+                }
+            }
+        },
+
+        toggleDirectionsPanel: function() {
+            $('#sat-options-panel').addClass('d-none');
+            $('#sat-directions-panel').toggleClass('d-none');
+        },
+
+        updateSectionDirections: function(section) {
+            var body = $('#sat-directions-body');
+            if (!body.length) {
+                return;
+            }
+            var html = '';
+            if (section === 'math') {
+                html = '<h6 class="fw-bold mb-2">Math Section Directions</h6>'
+                    + '<p class="mb-2">Questions in this section cover algebra, advanced math, '
+                    + 'problem-solving, data analysis, geometry, and trigonometry.</p>'
+                    + '<ul class="mb-2 ps-3">'
+                    + '<li>Use the <strong>Calculator</strong> and <strong>Formulas</strong> sheet anytime '
+                    + 'during the Math modules.</li>'
+                    + '<li>For multiple-choice items, select the single best option.</li>'
+                    + '<li>For Student-Produced Response (SPR) items, enter a decimal, fraction, or integer '
+                    + '(no mixed numbers, commas, spaces, or units).</li>'
+                    + '<li>Figures are drawn to scale unless noted otherwise.</li>'
+                    + '</ul>'
+                    + '<p class="mb-0 text-muted">Use <strong>Mark for Review</strong> or the question matrix '
+                    + 'to revisit items before submitting.</p>';
+            } else {
+                html = '<h6 class="fw-bold mb-2">Reading and Writing Section Directions</h6>'
+                    + '<p class="mb-2">Each question accompanies one or more passages testing comprehension, '
+                    + 'rhetorical synthesis, expression of ideas, and grammar conventions.</p>'
+                    + '<ul class="mb-2 ps-3">'
+                    + '<li>Choose the single best answer from the four provided choices.</li>'
+                    + '<li>Use <strong>Annotate</strong> to highlight text or save scratchpad notes, and click '
+                    + '<strong>ABC</strong> to cross out eliminated options.</li>'
+                    + '<li>Calculators and math reference sheets are unavailable in this section.</li>'
+                    + '</ul>'
+                    + '<p class="mb-0 text-muted">Navigate freely within this module until the timer ends '
+                    + 'or you submit.</p>';
+            }
+            body.html(html);
+        },
+
+        formatClock: function(totalSeconds) {
+            var safe = Math.max(0, parseInt(totalSeconds, 10) || 0);
+            var minutes = Math.floor(safe / 60);
+            var seconds = safe % 60;
+            var padM = (minutes < 10) ? '0' + minutes : String(minutes);
+            var padS = (seconds < 10) ? '0' + seconds : String(seconds);
+            return padM + ':' + padS;
+        },
+
+        showBreakScreen: function(breakRemaining) {
+            var self = this;
+            if (this.timerInterval) {
+                clearInterval(this.timerInterval);
+                this.timerInterval = null;
+            }
+            if (this.breakInterval) {
+                clearInterval(this.breakInterval);
+                this.breakInterval = null;
+            }
+
+            this.isBreakActive = true;
+            this.remainingSeconds = Math.max(0, parseInt(breakRemaining, 10) || 0);
+
+            this.closeFormulasModal();
+            this.closeAnnotatePanel();
+            $('#sat-calculator-panel, #sat-directions-panel, #sat-options-panel, #sat-matrix-drawer')
+                .addClass('d-none');
+            $('#sat-stimulus-pane, #sat-question-pane, #sat-review-overlay, .sat-bottom-bar').addClass('d-none');
+            $('#sat-btn-calculator, #sat-btn-formulas, #sat-btn-annotate, #sat-btn-directions, #sat-btn-top-submit')
+                .addClass('d-none');
+
+            $('#sat-stage-badge').text('Section Break');
+            $('#sat-section-title').text('Up Next: Math Section');
+            $('#sat-timer-toggle').addClass('d-none');
+
+            var formatted = this.formatClock(this.remainingSeconds);
+            $('#sat-break-timer').text(formatted);
+            $('#sat-timer-display').removeClass('d-none text-danger border-danger')
+                .addClass('text-warning').text(formatted);
+            $('#sat-btn-end-break').prop('disabled', false);
+            $('#sat-break-screen').removeClass('d-none').addClass('d-flex');
+
+            if (this.remainingSeconds <= 0) {
+                this.endBreak();
+                return;
+            }
+
+            this.breakInterval = setInterval(function() {
+                self.remainingSeconds--;
+                var clock = self.formatClock(self.remainingSeconds);
+                $('#sat-break-timer').text(clock);
+                $('#sat-timer-display').text(clock);
+                if (self.remainingSeconds <= 0) {
+                    clearInterval(self.breakInterval);
+                    self.breakInterval = null;
+                    self.endBreak();
+                }
+            }, 1000);
+        },
+
+        endBreak: function() {
+            var self = this;
+            if (this.breakInterval) {
+                clearInterval(this.breakInterval);
+                this.breakInterval = null;
+            }
+            $('#sat-btn-end-break').prop('disabled', true);
+
+            var promises = Ajax.call([{
+                methodname: 'mod_sat_end_break',
+                args: {
+                    attemptid: self.config.attemptid,
+                    modattemptid: (self.attemptData && self.attemptData.modattemptid)
+                        ? self.attemptData.modattemptid : 0
+                }
+            }]);
+
+            promises[0].done(function() {
+                self.isBreakActive = false;
+                $('#sat-break-screen').addClass('d-none').removeClass('d-flex');
+                $('#sat-btn-end-break').prop('disabled', false);
+                self.loadState();
+            }).fail(function(err) {
+                $('#sat-btn-end-break').prop('disabled', false);
+                Notification.exception(err);
+            });
+        },
+
+        updateTimerDisplay: function() {
+            var display = $('#sat-timer-display');
+            display.text(this.formatClock(this.remainingSeconds));
+            if (this.remainingSeconds < 300) {
+                display.removeClass('d-none text-warning').addClass('text-danger border-danger');
+                $('#sat-timer-toggle').addClass('d-none');
+            }
+        },
+
         startTimer: function() {
             var self = this;
             if (self.timerInterval) {
                 clearInterval(self.timerInterval);
             }
+            self.updateTimerDisplay();
 
             self.timerInterval = setInterval(function() {
                 if (self.remainingSeconds <= 0) {
                     clearInterval(self.timerInterval);
-                    self.submitModule();
+                    self.submitModule(true);
                     return;
                 }
 
                 self.remainingSeconds--;
-                var minutes = Math.floor(self.remainingSeconds / 60);
-                var seconds = self.remainingSeconds % 60;
-                var padM = (minutes < 10) ? '0' + minutes : minutes;
-                var padS = (seconds < 10) ? '0' + seconds : seconds;
-
-                var display = $('#sat-timer-display');
-                display.text(padM + ':' + padS);
-
-                // Turn red and force visible when < 5 minutes (300 seconds).
-                if (self.remainingSeconds < 300) {
-                    display.removeClass('d-none text-warning').addClass('text-danger border-danger');
-                    $('#sat-timer-toggle').addClass('d-none');
-                }
+                self.updateTimerDisplay();
             }, 1000);
         },
 
@@ -300,15 +524,43 @@ define(['jquery', 'core/ajax', 'core/notification', 'mod_sat/calculator'], funct
                 $('#sat-flag-icon').removeClass('fa-bookmark text-warning').addClass('fa-bookmark-o');
             }
 
-            // Render stimulus & prompt.
-            if (current.stimulus && current.stimulus.trim() !== '') {
+            // Render stimulus & prompt (including SPR directions guide in left pane).
+            var hasStimulus = Boolean(current.stimulus && current.stimulus.trim() !== '');
+            var sprGuideContainer = $('#sat-spr-guide-container');
+
+            if (current.is_spr) {
                 $('#sat-stimulus-pane').removeClass('d-none').addClass('col-6');
-                $('#sat-stimulus-content').html(current.stimulus);
-                $('#sat-question-pane').removeClass('col-12').addClass('col-6');
+                $('#sat-question-pane').removeClass('col-12 mx-auto').addClass('col-6');
+                if (hasStimulus) {
+                    $('#sat-pane-header-title').text('Stimulus & Response Directions');
+                    $('#sat-stimulus-content').removeClass('d-none').html(current.stimulus);
+                    sprGuideContainer.html(
+                        '<details class="sat-spr-guide-details mt-3 border rounded p-2 bg-light">'
+                        + '<summary class="fw-semibold small text-primary" style="cursor: pointer;">'
+                        + 'Student-Produced Response Directions</summary>'
+                        + '<div class="mt-2">' + this.getSprDirectionsHtml() + '</div></details>'
+                    ).removeClass('d-none');
+                } else {
+                    $('#sat-pane-header-title').text('Student-Produced Response Directions');
+                    $('#sat-stimulus-content').addClass('d-none').empty();
+                    sprGuideContainer.html(
+                        '<div class="sat-spr-guide-card">' + this.getSprDirectionsHtml() + '</div>'
+                    ).removeClass('d-none');
+                }
             } else {
-                // Single pane (Math centered layout).
-                $('#sat-stimulus-pane').addClass('d-none');
-                $('#sat-question-pane').removeClass('col-6').addClass('col-12 mx-auto');
+                sprGuideContainer.addClass('d-none').empty();
+                $('#sat-pane-header-title').text('Stimulus / Passage');
+                $('#sat-stimulus-content').removeClass('d-none');
+                if (hasStimulus) {
+                    $('#sat-stimulus-pane').removeClass('d-none').addClass('col-6');
+                    $('#sat-stimulus-content').html(current.stimulus);
+                    $('#sat-question-pane').removeClass('col-12 mx-auto').addClass('col-6');
+                } else {
+                    // Single pane (centered layout).
+                    $('#sat-stimulus-pane').addClass('d-none');
+                    $('#sat-stimulus-content').empty();
+                    $('#sat-question-pane').removeClass('col-6').addClass('col-12 mx-auto');
+                }
             }
 
             $('#sat-prompt-content').html(current.prompt);
@@ -321,7 +573,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'mod_sat/calculator'], funct
                 $('#sat-spr-area').removeClass('d-none');
                 var existingSpr = this.responses[current.slot] || '';
                 $('#sat-spr-input').val(existingSpr);
-                this.updateFractionPreview(existingSpr);
+                this.validateAndPreviewSpr(existingSpr);
             } else {
                 $('#sat-spr-area').addClass('d-none');
                 $('#sat-mcq-area').removeClass('d-none');
@@ -329,6 +581,31 @@ define(['jquery', 'core/ajax', 'core/notification', 'mod_sat/calculator'], funct
             }
 
             this.updateMatrixHighlight();
+        },
+
+        getSprDirectionsHtml: function() {
+            return '<ul class="small lh-base ps-3 mb-3">'
+                + '<li>If a question has more than one correct answer, enter only one.</li>'
+                + '<li>Enter up to <strong>5 characters</strong> for positive answers and up to '
+                + '<strong>6 characters</strong> (including the negative sign) for negative answers.</li>'
+                + '<li>Accepted characters are digits (<code>0&ndash;9</code>), decimal point (<code>.</code>), '
+                + 'fraction slash (<code>/</code>), and a leading minus sign (<code>-</code>).</li>'
+                + '<li>Do <strong>not</strong> enter mixed numbers (write <code>7/2</code> or <code>3.5</code> '
+                + 'instead of <code>3 1/2</code>), commas, spaces, percent signs (<code>%</code>), or currency symbols.</li>'
+                + '<li>If a decimal does not fit in the allowed width, round or truncate it to fill all available '
+                + 'positions (for example, <code>2/3</code> as <code>.6666</code>, <code>.6667</code>, '
+                + '<code>0.666</code>, or <code>0.667</code>).</li>'
+                + '</ul>'
+                + '<table class="table table-sm table-bordered small mb-0 bg-white">'
+                + '<thead class="table-light"><tr><th>Value</th><th>Accepted Entry</th>'
+                + '<th>Not Accepted</th></tr></thead>'
+                + '<tbody>'
+                + '<tr><td>3.5</td><td><code>3.5</code>, <code>7/2</code></td><td><code>3 1/2</code></td></tr>'
+                + '<tr><td>2/3</td><td><code>2/3</code>, <code>.6666</code>, <code>0.667</code></td>'
+                + '<td><code>0.66</code></td></tr>'
+                + '<tr><td>-1/4</td><td><code>-1/4</code>, <code>-0.25</code>, <code>-.25</code></td>'
+                + '<td><code>-25%</code></td></tr>'
+                + '</tbody></table>';
         },
 
         renderMcqOptions: function(slotData) {
@@ -437,7 +714,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'mod_sat/calculator'], funct
             var val = input.val();
             var currentSlot = this.attemptData.slots[this.currentIndex].slot;
             this.responses[currentSlot] = val;
-            this.updateFractionPreview(val);
+            this.validateAndPreviewSpr(val);
             this.renderMatrix();
 
             if (this.sprTimer) {
@@ -450,17 +727,130 @@ define(['jquery', 'core/ajax', 'core/notification', 'mod_sat/calculator'], funct
             }, 300);
         },
 
-        updateFractionPreview: function(val) {
-            var preview = $('#sat-spr-fraction-preview');
-            if (val.indexOf('/') !== -1) {
-                var parts = val.split('/');
-                if (parts.length === 2 && parts[1] !== '') {
-                    preview.text('Parsed Fraction: ' + parts[0] + ' ÷ ' + parts[1]);
-                } else {
-                    preview.text('');
+        validateSprFormat: function(raw) {
+            var trimmed = String(raw || '').trim();
+            if (trimmed === '') {
+                return {valid: true, empty: true, error: '', value: null};
+            }
+
+            if (/\s/.test(trimmed)) {
+                return {
+                    valid: false,
+                    empty: false,
+                    error: 'Mixed numbers and spaces are not allowed—use an improper fraction or decimal',
+                    value: null
+                };
+            }
+
+            if (!/^-?[0-9./]+$/.test(trimmed)) {
+                return {
+                    valid: false,
+                    empty: false,
+                    error: 'Invalid character: enter digits, ., /, or a leading -',
+                    value: null
+                };
+            }
+
+            var isNegative = trimmed.indexOf('-') === 0;
+            var maxLen = isNegative ? 6 : 5;
+            if (trimmed.length > maxLen) {
+                return {
+                    valid: false,
+                    empty: false,
+                    error: 'Exceeds max ' + maxLen + ' characters',
+                    value: null
+                };
+            }
+
+            var dots = (trimmed.match(/\./g) || []).length;
+            var slashes = (trimmed.match(/\//g) || []).length;
+            if (dots > 1 || slashes > 1) {
+                return {
+                    valid: false,
+                    empty: false,
+                    error: 'Only one decimal point or one fraction slash is allowed',
+                    value: null
+                };
+            }
+            if (dots > 0 && slashes > 0) {
+                return {
+                    valid: false,
+                    empty: false,
+                    error: 'Cannot combine decimal point and fraction slash',
+                    value: null
+                };
+            }
+
+            if (slashes === 1) {
+                if (trimmed[0] === '/' || trimmed.slice(-1) === '/' || trimmed.indexOf('-/') !== -1) {
+                    return {
+                        valid: false,
+                        empty: false,
+                        error: 'Enter digits on both sides of /',
+                        value: null
+                    };
                 }
-            } else {
-                preview.text('');
+                var parts = trimmed.split('/');
+                var num = Number(parts[0]);
+                var den = Number(parts[1]);
+                if (den === 0) {
+                    return {
+                        valid: false,
+                        empty: false,
+                        error: 'Cannot divide by zero',
+                        value: null
+                    };
+                }
+                return {valid: true, empty: false, error: '', value: num / den};
+            }
+
+            if (trimmed === '-' || trimmed === '.' || trimmed === '-.') {
+                return {
+                    valid: false,
+                    empty: false,
+                    error: 'Enter at least one digit',
+                    value: null
+                };
+            }
+
+            var parsed = Number(trimmed);
+            if (isNaN(parsed) || !isFinite(parsed)) {
+                return {
+                    valid: false,
+                    empty: false,
+                    error: 'Enter a valid number',
+                    value: null
+                };
+            }
+
+            return {valid: true, empty: false, error: '', value: parsed};
+        },
+
+        validateAndPreviewSpr: function(val) {
+            var input = $('#sat-spr-input');
+            var msgEl = $('#sat-spr-validation-msg');
+            var preview = $('#sat-spr-fraction-preview');
+            var check = this.validateSprFormat(val);
+
+            input.removeClass('is-invalid is-valid');
+            msgEl.removeClass('text-danger text-success').addClass('d-none').text('');
+            preview.text('');
+
+            if (check.empty) {
+                return;
+            }
+
+            if (!check.valid) {
+                input.addClass('is-invalid');
+                msgEl.addClass('text-danger').removeClass('d-none').text(check.error);
+                return;
+            }
+
+            input.addClass('is-valid');
+            if (String(val).indexOf('/') !== -1 && check.value !== null && isFinite(check.value)) {
+                var rounded = Number(check.value.toFixed(4));
+                var prefix = (Math.abs(check.value - rounded) < 1e-9) ? '= ' : '≈ ';
+                preview.text(String(val).trim() + ' ' + prefix + rounded);
             }
         },
 
@@ -519,34 +909,105 @@ define(['jquery', 'core/ajax', 'core/notification', 'mod_sat/calculator'], funct
         },
 
         showModuleReview: function() {
-            var total = (this.attemptData && this.attemptData.slots) ? this.attemptData.slots.length : 0;
+            var slots = (this.attemptData && this.attemptData.slots) ? this.attemptData.slots : [];
+            var total = slots.length;
             var answeredCount = 0;
+            var flaggedCount = 0;
             var self = this;
-            if (this.attemptData && this.attemptData.slots) {
-                this.attemptData.slots.forEach(function(s) {
-                    if (self.responses[s.slot] && self.responses[s.slot].trim() !== '') {
-                        answeredCount++;
-                    }
-                });
-            }
-            var unanswered = total - answeredCount;
-            var msg = 'Module Summary:\n• Answered: ' + answeredCount + ' of ' + total + ' questions.';
-            if (unanswered > 0) {
-                msg += '\n• Unanswered: ' + unanswered + ' question(s).';
-            }
-            msg += '\n\nAre you sure you want to submit this module now?\n(Click OK to Submit, or Cancel to keep working)';
 
-            var confirmSubmit = confirm(msg);
-            if (confirmSubmit) {
-                this.submitModule();
+            $('#sat-matrix-drawer, #sat-directions-panel, #sat-options-panel').addClass('d-none');
+
+            var grid = $('#sat-review-grid');
+            grid.empty();
+
+            slots.forEach(function(s, idx) {
+                var isAnswered = Boolean(self.responses[s.slot] && self.responses[s.slot].trim() !== '');
+                var isFlagged = Boolean(self.flagged[s.slot]);
+                if (isAnswered) {
+                    answeredCount++;
+                }
+                if (isFlagged) {
+                    flaggedCount++;
+                }
+
+                var tile = $('<button type="button" class="sat-review-tile"></button>');
+                if (isAnswered) {
+                    tile.addClass('answered');
+                }
+                if (isFlagged) {
+                    tile.addClass('flagged');
+                }
+                if (idx === self.currentIndex) {
+                    tile.addClass('current');
+                }
+                tile.append($('<span class="sat-review-num"></span>').text(idx + 1));
+                if (isFlagged) {
+                    tile.append('<i class="fa fa-bookmark sat-review-flag-icon" aria-hidden="true"></i>');
+                }
+                tile.attr('aria-label', 'Question ' + (idx + 1)
+                    + (isAnswered ? ', answered' : ', unanswered')
+                    + (isFlagged ? ', marked for review' : ''));
+                tile.on('click', function() {
+                    if (self.isSubmitting) {
+                        return;
+                    }
+                    self.currentIndex = idx;
+                    $('#sat-review-overlay').addClass('d-none');
+                    self.renderQuestion();
+                    self.renderMatrix();
+                });
+                grid.append(tile);
+            });
+
+            var unanswered = total - answeredCount;
+            var sectionLabel = (this.attemptData && this.attemptData.section === 'rw')
+                ? 'Reading and Writing' : 'Math';
+            var stageLabel = (this.attemptData && this.attemptData.stage === 'm1')
+                ? 'Module 1 of 2' : 'Module 2 of 2';
+
+            $('#sat-review-subtitle').text(sectionLabel + ' • ' + stageLabel);
+            $('#sat-review-answered-count').text(answeredCount);
+            $('#sat-review-unanswered-count').text(unanswered);
+            $('#sat-review-flagged-count').text(flaggedCount);
+
+            var warnEl = $('#sat-review-unanswered-warning');
+            if (unanswered > 0) {
+                warnEl.text('You have ' + unanswered + ' unanswered question(s). '
+                    + 'Select any question number below to return and answer it before submitting.')
+                    .removeClass('d-none');
+            } else {
+                warnEl.addClass('d-none').text('');
             }
+
+            $('#sat-transition-status').addClass('d-none').text('');
+            $('#sat-btn-review-back, #sat-btn-review-confirm').prop('disabled', false);
+            $('#sat-review-overlay').removeClass('d-none');
         },
 
-        submitModule: function() {
+        submitModule: function(isAutoExpired) {
             var self = this;
+            if (self.isSubmitting) {
+                return;
+            }
+            self.isSubmitting = true;
+
             if (self.timerInterval) {
                 clearInterval(self.timerInterval);
+                self.timerInterval = null;
             }
+
+            $('#sat-matrix-drawer, #sat-calculator-panel, #sat-directions-panel, #sat-options-panel')
+                .addClass('d-none');
+            this.closeFormulasModal();
+            this.closeAnnotatePanel();
+
+            $('#sat-review-overlay').removeClass('d-none');
+            $('#sat-btn-review-back, #sat-btn-review-confirm').prop('disabled', true);
+            $('#sat-transition-status')
+                .text(isAutoExpired
+                    ? 'Time expired — Submitting module responses...'
+                    : 'Submitting module responses...')
+                .removeClass('d-none');
 
             var doSubmit = function() {
                 var promises = Ajax.call([{
@@ -559,16 +1020,33 @@ define(['jquery', 'core/ajax', 'core/notification', 'mod_sat/calculator'], funct
 
                 promises[0].done(function(res) {
                     if (res.nextaction === 'finish') {
-                        alert('Congratulations! You have completed the SAT exam simulation. Redirecting to your results...');
-                        window.location.href = M.cfg.wwwroot + '/mod/sat/view.php?id=' + self.config.cmid;
+                        $('#sat-transition-status').text(
+                            'Exam Complete — Opening your diagnostic score report...'
+                        );
+                        window.location.href = M.cfg.wwwroot
+                            + '/mod/sat/diagnostic.php?attemptid=' + self.config.attemptid;
                     } else if (res.nextaction === 'pause') {
-                        alert('Module submitted! Since this exam is in Paced Homework mode, your route has been locked in. You can resume Module 2 now or return later.');
+                        $('#sat-transition-status').text(
+                            'Module Submitted — Returning to exam overview...'
+                        );
                         window.location.href = M.cfg.wwwroot + '/mod/sat/view.php?id=' + self.config.cmid;
+                    } else if (res.nextaction === 'break') {
+                        $('#sat-transition-status').text(
+                            'Reading and Writing Complete — Starting scheduled section break...'
+                        );
+                        self.isSubmitting = false;
+                        self.loadState();
                     } else {
-                        alert('Module 1 submitted! Proceeding to Module 2...');
-                        window.location.reload();
+                        $('#sat-transition-status').text('Module Submitted — Preparing next stage...');
+                        self.isSubmitting = false;
+                        self.loadState();
                     }
-                }).fail(Notification.exception);
+                }).fail(function(err) {
+                    self.isSubmitting = false;
+                    $('#sat-btn-review-back, #sat-btn-review-confirm').prop('disabled', false);
+                    $('#sat-transition-status').addClass('d-none').text('');
+                    Notification.exception(err);
+                });
             };
 
             if (self.sprTimer && self.pendingSprSlot) {
@@ -616,7 +1094,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'mod_sat/calculator'], funct
 
         toggleAnnotatePanel: function() {
             var panel = $('#sat-annotate-panel');
-            $('#sat-options-panel').addClass('d-none');
+            $('#sat-options-panel, #sat-directions-panel').addClass('d-none');
             if (panel.hasClass('d-none')) {
                 panel.removeClass('d-none');
                 this.annotateMode = true;

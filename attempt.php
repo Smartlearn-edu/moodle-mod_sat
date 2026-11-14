@@ -120,6 +120,9 @@ echo $OUTPUT->header();
         <div class="sat-module-title d-flex align-items-center gap-2">
             <span class="badge bg-primary px-3 py-2 fs-6" id="sat-stage-badge">Loading...</span>
             <span class="fw-semibold text-light" id="sat-section-title"></span>
+            <button id="sat-btn-directions" type="button" class="btn btn-sm btn-outline-light d-flex align-items-center gap-1 ms-2" title="Section Directions">
+                <i class="fa fa-info-circle"></i> <span>Directions</span>
+            </button>
         </div>
 
         <div class="sat-timer-container d-flex align-items-center gap-2">
@@ -149,14 +152,93 @@ echo $OUTPUT->header();
         </div>
     </header>
 
+    <!-- Collapsible Section Directions Panel -->
+    <div id="sat-directions-panel" class="sat-floating-modal card shadow-lg position-absolute d-none" style="width: 460px; max-width: calc(100vw - 24px); top: 64px; left: 20px; z-index: 1055;">
+        <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center py-2">
+            <span class="small fw-bold"><i class="fa fa-info-circle me-1"></i> Section Directions</span>
+            <button id="sat-directions-close" type="button" class="btn btn-sm btn-outline-light py-0 px-2" aria-label="Close Directions">
+                <i class="fa fa-times" aria-hidden="true"></i>
+            </button>
+        </div>
+        <div id="sat-directions-body" class="card-body p-3 small lh-base"></div>
+    </div>
+
     <!-- Main Question Workspace -->
     <main class="sat-workspace flex-grow-1 overflow-hidden d-flex position-relative">
+        <!-- Scheduled Inter-Section Break Screen -->
+        <div id="sat-break-screen" class="sat-workspace-overlay w-100 h-100 d-none align-items-center justify-content-center p-4 overflow-y-auto">
+            <div class="card shadow-lg border-0 text-center p-4 p-md-5" style="max-width: 600px; width: 100%;">
+                <div class="mb-2">
+                    <span class="badge bg-info text-dark text-uppercase px-3 py-2">Inter-Section Break</span>
+                </div>
+                <h2 class="fw-bold mb-1">Scheduled Section Break</h2>
+                <p class="text-muted mb-3">Reading and Writing Section Complete &bull; Up Next: Math Section</p>
+                <div id="sat-break-timer" class="display-4 fw-bold font-monospace text-warning bg-dark rounded-3 py-3 px-4 mx-auto my-3 border border-secondary" style="min-width: 200px;">10:00</div>
+                <div class="alert alert-light border text-start small mb-4">
+                    <ul class="mb-0 ps-3">
+                        <li>Your Reading and Writing answers are saved and locked.</li>
+                        <li>Testing tools and exam questions remain hidden during the break.</li>
+                        <li>The Math section starts automatically when the countdown reaches <code>00:00</code>, or you may resume early at any time.</li>
+                    </ul>
+                </div>
+                <div>
+                    <button id="sat-btn-end-break" type="button" class="btn btn-lg btn-primary px-5 fw-bold">
+                        <i class="fa fa-play me-2"></i>Resume to Math Section Now
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- In-App Check Your Work Pre-Submit Overlay -->
+        <div id="sat-review-overlay" class="sat-workspace-overlay w-100 h-100 d-none overflow-y-auto p-4 bg-light">
+            <div class="container py-3" style="max-width: 820px;">
+                <div class="card shadow-sm border p-4">
+                    <div class="text-center mb-3">
+                        <h3 class="fw-bold mb-1">Check Your Work</h3>
+                        <div id="sat-review-subtitle" class="text-muted small">Review your progress before submitting this module.</div>
+                    </div>
+                    <div class="row g-2 text-center mb-3">
+                        <div class="col-4">
+                            <div class="border rounded p-2 bg-white">
+                                <div class="small text-muted">Answered</div>
+                                <div id="sat-review-answered-count" class="fs-4 fw-bold text-success">0</div>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="border rounded p-2 bg-white">
+                                <div class="small text-muted">Unanswered</div>
+                                <div id="sat-review-unanswered-count" class="fs-4 fw-bold text-danger">0</div>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="border rounded p-2 bg-white">
+                                <div class="small text-muted">Marked for Review</div>
+                                <div id="sat-review-flagged-count" class="fs-4 fw-bold text-warning">0</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="sat-review-unanswered-warning" class="alert alert-warning py-2 small d-none"></div>
+                    <div id="sat-review-grid" class="d-flex flex-wrap gap-2 justify-content-center my-4"></div>
+                    <div id="sat-transition-status" class="alert alert-info py-2 fw-semibold text-center d-none"></div>
+                    <div class="d-flex justify-content-between align-items-center pt-3 border-top">
+                        <button id="sat-btn-review-back" type="button" class="btn btn-outline-secondary px-4">
+                            <i class="fa fa-arrow-left me-1"></i>Back to Questions
+                        </button>
+                        <button id="sat-btn-review-confirm" type="button" class="btn btn-warning px-4 fw-bold text-dark">
+                            <i class="fa fa-check-circle me-1"></i>Confirm &amp; Submit Module
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Reading Passage Stimulus Pane (Left) -->
         <div id="sat-stimulus-pane" class="sat-pane sat-stimulus-pane col-6 p-4 overflow-y-auto border-end bg-white">
-            <div class="sat-pane-header text-muted small fw-bold text-uppercase mb-2">Stimulus / Passage</div>
+            <div id="sat-pane-header-title" class="sat-pane-header text-muted small fw-bold text-uppercase mb-2">Stimulus / Passage</div>
             <div id="sat-stimulus-content" class="sat-reading-text lh-lg fs-5">
                 <!-- Injected via JavaScript -->
             </div>
+            <div id="sat-spr-guide-container" class="d-none"></div>
         </div>
 
         <!-- Question Prompt & Answers Pane (Right) -->
@@ -185,7 +267,8 @@ echo $OUTPUT->header();
                         <input type="text" id="sat-spr-input" class="form-control text-center font-monospace fs-3"
                                placeholder="e.g. 2/3, 0.75, -5" maxlength="6" autocomplete="off">
                     </div>
-                    <div class="d-flex justify-content-between text-muted small">
+                    <div id="sat-spr-validation-msg" class="small mt-1 d-none" role="status" aria-live="polite"></div>
+                    <div class="d-flex justify-content-between text-muted small mt-1">
                         <span>Max 5 chars (positive), 6 chars (negative)</span>
                         <span id="sat-spr-fraction-preview" class="fw-bold text-primary"></span>
                     </div>
@@ -247,6 +330,7 @@ echo $OUTPUT->header();
         <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center py-2" id="sat-calc-drag-handle" style="cursor: move;">
             <span class="small fw-bold"><i class="fa fa-calculator me-1"></i> Calculator</span>
             <div class="d-flex gap-1 align-items-center">
+                <button id="sat-calc-angle-mode" type="button" class="btn btn-xs btn-outline-warning py-0 px-2 font-monospace" style="font-size: 11px;" title="Toggle Radians / Degrees">RAD</button>
                 <button id="sat-calc-mode-toggle" type="button" class="btn btn-xs btn-outline-light py-0 px-2" style="font-size: 11px;">Graph</button>
                 <button id="sat-calc-close" type="button" class="btn btn-sm btn-outline-light py-0 px-2" aria-label="Close Calculator">
                     <i class="fa fa-times" aria-hidden="true"></i>
@@ -256,7 +340,7 @@ echo $OUTPUT->header();
         <div class="card-body p-2">
             <!-- Scientific Mode -->
             <div id="sat-calc-scientific" class="d-flex flex-column gap-2">
-                <input type="text" id="sat-calc-screen" class="form-control text-end fs-4 font-monospace bg-light" readonly value="0">
+                <input type="text" id="sat-calc-screen" class="form-control text-end fs-4 font-monospace bg-light" value="0" aria-label="Calculator display">
                 <div class="d-grid gap-1" style="grid-template-columns: repeat(5, 1fr);">
                     <button class="btn btn-sm btn-secondary calc-btn" data-val="sin">sin</button>
                     <button class="btn btn-sm btn-secondary calc-btn" data-val="cos">cos</button>
@@ -297,10 +381,22 @@ echo $OUTPUT->header();
 
             <!-- Graphing Mode (HTML5 Canvas Plotter) -->
             <div id="sat-calc-graphing" class="d-none">
-                <div class="input-group input-group-sm mb-2">
-                    <span class="input-group-text font-monospace">y =</span>
+                <div class="input-group input-group-sm mb-1">
+                    <span class="input-group-text font-monospace fw-bold text-primary">y₁ =</span>
                     <input type="text" id="sat-graph-function" class="form-control font-monospace" placeholder="e.g. x^2 - 4">
-                    <button id="sat-graph-plot-btn" class="btn btn-primary">Plot</button>
+                    <button id="sat-graph-plot-btn" type="button" class="btn btn-primary">Plot</button>
+                </div>
+                <div class="input-group input-group-sm mb-2">
+                    <span class="input-group-text font-monospace fw-bold text-success">y₂ =</span>
+                    <input type="text" id="sat-graph-function-2" class="form-control font-monospace" placeholder="Optional second curve, e.g. 2x + 1">
+                </div>
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <div class="btn-group btn-group-sm" role="group" aria-label="Graph zoom controls">
+                        <button id="sat-graph-zoom-in" type="button" class="btn btn-outline-secondary py-0 px-2" title="Zoom In">+</button>
+                        <button id="sat-graph-zoom-out" type="button" class="btn btn-outline-secondary py-0 px-2" title="Zoom Out">&minus;</button>
+                        <button id="sat-graph-zoom-reset" type="button" class="btn btn-outline-secondary py-0 px-2" title="Reset Zoom">1:1</button>
+                    </div>
+                    <small id="sat-graph-coords" class="font-monospace text-muted">x: --, y: --</small>
                 </div>
                 <canvas id="sat-graph-canvas" width="410" height="260" class="border rounded bg-white w-100"></canvas>
             </div>
@@ -364,6 +460,13 @@ echo $OUTPUT->header();
                 <input class="form-check-input" type="checkbox" id="sat-toggle-contrast">
                 <label class="form-check-label small fw-semibold" for="sat-toggle-contrast">High Contrast Mode</label>
             </div>
+            <hr class="my-2">
+            <div class="small fw-semibold mb-1">Keyboard Shortcuts</div>
+            <ul class="list-unstyled small text-muted mb-0">
+                <li><code>Alt + &larr; / &rarr;</code> Previous / Next question</li>
+                <li><code>Alt + F</code> Mark for Review</li>
+                <li><code>Esc</code> Close open panels</li>
+            </ul>
         </div>
     </div>
 
@@ -372,54 +475,182 @@ echo $OUTPUT->header();
         <div class="modal-dialog modal-lg modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header py-2 d-flex justify-content-between align-items-center">
-                    <h5 id="sat-formulas-title" class="modal-title fs-6 fw-bold mb-0"><i class="fa fa-book me-2"></i> Standard SAT Math Reference Formulas</h5>
+                    <h5 id="sat-formulas-title" class="modal-title fs-6 fw-bold mb-0"><i class="fa fa-book me-2"></i> Math Reference Formulas</h5>
                     <button type="button" id="sat-formulas-close" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1" data-bs-dismiss="modal" data-dismiss="modal" aria-label="Close Formulas">
                         <i class="fa fa-times" aria-hidden="true"></i> <span>Close</span>
                     </button>
                 </div>
                 <div class="modal-body p-4">
-                    <div class="row g-4 text-center">
-                        <div class="col-6 col-md-3 border rounded p-2">
-                            <svg viewBox="0 0 100 80" class="w-75 mb-2">
-                                <circle cx="50" cy="40" r="30" fill="none" stroke="#2563eb" stroke-width="2"/>
-                                <line x1="50" y1="40" x2="80" y2="40" stroke="#ef4444" stroke-width="2"/>
-                                <text x="62" y="36" font-size="12" fill="#ef4444">r</text>
-                            </svg>
-                            <div class="fw-bold">Circle</div>
-                            <small class="text-muted">A = πr²<br>C = 2πr</small>
+                    <div class="row g-3 text-center">
+                        <!-- Row 1: 2D Geometry & Right Triangle -->
+                        <div class="col-6 col-md-3">
+                            <div class="border rounded p-2 h-100">
+                                <svg viewBox="0 0 110 85" class="w-75 mb-1">
+                                    <circle cx="55" cy="42" r="30" fill="none" stroke="#2563eb" stroke-width="2"/>
+                                    <circle cx="55" cy="42" r="2" fill="#0f172a"/>
+                                    <line x1="55" y1="42" x2="85" y2="42" stroke="#ef4444" stroke-width="2"/>
+                                    <text x="68" y="37" font-size="12" fill="#ef4444" font-style="italic">r</text>
+                                </svg>
+                                <div class="fw-bold small">Circle</div>
+                                <small class="text-muted d-block">A = &pi;r&sup2;<br>C = 2&pi;r</small>
+                            </div>
                         </div>
-                        <div class="col-6 col-md-3 border rounded p-2">
-                            <svg viewBox="0 0 100 80" class="w-75 mb-2">
-                                <rect x="15" y="20" width="70" height="40" fill="none" stroke="#2563eb" stroke-width="2"/>
-                                <text x="45" y="16" font-size="12" fill="#ef4444">w</text>
-                                <text x="88" y="44" font-size="12" fill="#ef4444">l</text>
-                            </svg>
-                            <div class="fw-bold">Rectangle</div>
-                            <small class="text-muted">A = lw</small>
+                        <div class="col-6 col-md-3">
+                            <div class="border rounded p-2 h-100">
+                                <svg viewBox="0 0 110 85" class="w-75 mb-1">
+                                    <rect x="18" y="22" width="74" height="42" fill="none" stroke="#2563eb" stroke-width="2"/>
+                                    <text x="51" y="16" font-size="12" fill="#ef4444" font-style="italic">l</text>
+                                    <text x="96" y="46" font-size="12" fill="#ef4444" font-style="italic">w</text>
+                                </svg>
+                                <div class="fw-bold small">Rectangle</div>
+                                <small class="text-muted d-block">A = lw</small>
+                            </div>
                         </div>
-                        <div class="col-6 col-md-3 border rounded p-2">
-                            <svg viewBox="0 0 100 80" class="w-75 mb-2">
-                                <polygon points="20,65 80,65 50,15" fill="none" stroke="#2563eb" stroke-width="2"/>
-                                <line x1="50" y1="15" x2="50" y2="65" stroke="#ef4444" stroke-dasharray="2,2"/>
-                                <text x="54" y="42" font-size="12" fill="#ef4444">h</text>
-                                <text x="48" y="76" font-size="12" fill="#2563eb">b</text>
-                            </svg>
-                            <div class="fw-bold">Triangle</div>
-                            <small class="text-muted">A = ½bh</small>
+                        <div class="col-6 col-md-3">
+                            <div class="border rounded p-2 h-100">
+                                <svg viewBox="0 0 110 85" class="w-75 mb-1">
+                                    <polygon points="18,68 92,68 58,18" fill="none" stroke="#2563eb" stroke-width="2"/>
+                                    <line x1="58" y1="18" x2="58" y2="68" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="3,2"/>
+                                    <polyline points="58,61 65,61 65,68" fill="none" stroke="#64748b" stroke-width="1.2"/>
+                                    <text x="62" y="46" font-size="12" fill="#ef4444" font-style="italic">h</text>
+                                    <text x="52" y="80" font-size="12" fill="#2563eb" font-style="italic">b</text>
+                                </svg>
+                                <div class="fw-bold small">Triangle</div>
+                                <small class="text-muted d-block">A = &frac12;bh</small>
+                            </div>
                         </div>
-                        <div class="col-6 col-md-3 border rounded p-2">
-                            <svg viewBox="0 0 100 80" class="w-75 mb-2">
-                                <polygon points="20,65 80,65 20,15" fill="none" stroke="#2563eb" stroke-width="2"/>
-                                <text x="10" y="42" font-size="12" fill="#ef4444">a</text>
-                                <text x="48" y="76" font-size="12" fill="#ef4444">b</text>
-                                <text x="55" y="38" font-size="12" fill="#2563eb">c</text>
-                            </svg>
-                            <div class="fw-bold">Pythagorean</div>
-                            <small class="text-muted">a² + b² = c²</small>
+                        <div class="col-6 col-md-3">
+                            <div class="border rounded p-2 h-100">
+                                <svg viewBox="0 0 110 85" class="w-75 mb-1">
+                                    <polygon points="22,68 88,68 22,18" fill="none" stroke="#2563eb" stroke-width="2"/>
+                                    <polyline points="22,60 30,60 30,68" fill="none" stroke="#64748b" stroke-width="1.5"/>
+                                    <text x="11" y="46" font-size="12" fill="#ef4444" font-style="italic">a</text>
+                                    <text x="52" y="80" font-size="12" fill="#ef4444" font-style="italic">b</text>
+                                    <text x="58" y="38" font-size="12" fill="#2563eb" font-style="italic">c</text>
+                                </svg>
+                                <div class="fw-bold small">Right Triangle</div>
+                                <small class="text-muted d-block">c&sup2; = a&sup2; + b&sup2;</small>
+                            </div>
+                        </div>
+
+                        <!-- Row 2: Special Right Triangles & 3D Prisms -->
+                        <div class="col-6 col-md-3">
+                            <div class="border rounded p-2 h-100">
+                                <svg viewBox="0 0 110 85" class="w-75 mb-1">
+                                    <polygon points="18,68 92,68 18,22" fill="none" stroke="#2563eb" stroke-width="2"/>
+                                    <polyline points="18,60 26,60 26,68" fill="none" stroke="#64748b" stroke-width="1.5"/>
+                                    <text x="20" y="39" font-size="9" fill="#0f172a">60&deg;</text>
+                                    <text x="68" y="65" font-size="9" fill="#0f172a">30&deg;</text>
+                                    <text x="8" y="48" font-size="11" fill="#ef4444" font-style="italic">x</text>
+                                    <text x="45" y="80" font-size="11" fill="#ef4444">x&radic;3</text>
+                                    <text x="56" y="40" font-size="11" fill="#2563eb">2x</text>
+                                </svg>
+                                <div class="fw-bold small">30&deg;&ndash;60&deg;&ndash;90&deg;</div>
+                                <small class="text-muted d-block">x, x&radic;3, 2x</small>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="border rounded p-2 h-100">
+                                <svg viewBox="0 0 110 85" class="w-75 mb-1">
+                                    <polygon points="24,68 82,68 24,14" fill="none" stroke="#2563eb" stroke-width="2"/>
+                                    <polyline points="24,60 32,60 32,68" fill="none" stroke="#64748b" stroke-width="1.5"/>
+                                    <text x="27" y="32" font-size="9" fill="#0f172a">45&deg;</text>
+                                    <text x="61" y="65" font-size="9" fill="#0f172a">45&deg;</text>
+                                    <text x="12" y="45" font-size="11" fill="#ef4444" font-style="italic">s</text>
+                                    <text x="50" y="80" font-size="11" fill="#ef4444" font-style="italic">s</text>
+                                    <text x="56" y="38" font-size="11" fill="#2563eb">s&radic;2</text>
+                                </svg>
+                                <div class="fw-bold small">45&deg;&ndash;45&deg;&ndash;90&deg;</div>
+                                <small class="text-muted d-block">s, s, s&radic;2</small>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="border rounded p-2 h-100">
+                                <svg viewBox="0 0 110 85" class="w-75 mb-1">
+                                    <rect x="20" y="30" width="52" height="38" fill="none" stroke="#2563eb" stroke-width="2"/>
+                                    <polyline points="20,30 38,16 90,16 90,54 72,68" fill="none" stroke="#2563eb" stroke-width="2"/>
+                                    <line x1="72" y1="30" x2="90" y2="16" stroke="#2563eb" stroke-width="2"/>
+                                    <line x1="38" y1="16" x2="38" y2="54" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="3,2"/>
+                                    <line x1="20" y1="68" x2="38" y2="54" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="3,2"/>
+                                    <line x1="38" y1="54" x2="90" y2="54" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="3,2"/>
+                                    <text x="43" y="80" font-size="11" fill="#ef4444" font-style="italic">l</text>
+                                    <text x="83" y="67" font-size="11" fill="#ef4444" font-style="italic">w</text>
+                                    <text x="93" y="39" font-size="11" fill="#ef4444" font-style="italic">h</text>
+                                </svg>
+                                <div class="fw-bold small">Rectangular Prism</div>
+                                <small class="text-muted d-block">V = lwh</small>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="border rounded p-2 h-100">
+                                <svg viewBox="0 0 110 85" class="w-75 mb-1">
+                                    <ellipse cx="55" cy="22" rx="28" ry="9" fill="none" stroke="#2563eb" stroke-width="2"/>
+                                    <line x1="27" y1="22" x2="27" y2="66" stroke="#2563eb" stroke-width="2"/>
+                                    <line x1="83" y1="22" x2="83" y2="66" stroke="#2563eb" stroke-width="2"/>
+                                    <path d="M 27 66 A 28 9 0 0 0 83 66" fill="none" stroke="#2563eb" stroke-width="2"/>
+                                    <path d="M 27 66 A 28 9 0 0 1 83 66" fill="none" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="3,2"/>
+                                    <line x1="55" y1="22" x2="83" y2="22" stroke="#ef4444" stroke-width="1.8"/>
+                                    <text x="66" y="19" font-size="11" fill="#ef4444" font-style="italic">r</text>
+                                    <text x="88" y="48" font-size="11" fill="#ef4444" font-style="italic">h</text>
+                                </svg>
+                                <div class="fw-bold small">Right Cylinder</div>
+                                <small class="text-muted d-block">V = &pi;r&sup2;h</small>
+                            </div>
+                        </div>
+
+                        <!-- Row 3: Curved & Tapered Solids -->
+                        <div class="col-6 col-md-4">
+                            <div class="border rounded p-2 h-100">
+                                <svg viewBox="0 0 110 85" class="w-75 mb-1" style="max-width: 110px;">
+                                    <circle cx="55" cy="42" r="30" fill="none" stroke="#2563eb" stroke-width="2"/>
+                                    <path d="M 25 42 A 30 10 0 0 0 85 42" fill="none" stroke="#2563eb" stroke-width="1.5"/>
+                                    <path d="M 25 42 A 30 10 0 0 1 85 42" fill="none" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="3,2"/>
+                                    <line x1="55" y1="42" x2="85" y2="42" stroke="#ef4444" stroke-width="1.8"/>
+                                    <text x="67" y="37" font-size="12" fill="#ef4444" font-style="italic">r</text>
+                                </svg>
+                                <div class="fw-bold small">Sphere</div>
+                                <small class="text-muted d-block">V = &#x2074;&#x2044;&#x2083;&pi;r&sup3;</small>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-4">
+                            <div class="border rounded p-2 h-100">
+                                <svg viewBox="0 0 110 85" class="w-75 mb-1" style="max-width: 110px;">
+                                    <line x1="55" y1="14" x2="25" y2="64" stroke="#2563eb" stroke-width="2"/>
+                                    <line x1="55" y1="14" x2="85" y2="64" stroke="#2563eb" stroke-width="2"/>
+                                    <path d="M 25 64 A 30 9 0 0 0 85 64" fill="none" stroke="#2563eb" stroke-width="2"/>
+                                    <path d="M 25 64 A 30 9 0 0 1 85 64" fill="none" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="3,2"/>
+                                    <line x1="55" y1="14" x2="55" y2="64" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="3,2"/>
+                                    <line x1="55" y1="64" x2="85" y2="64" stroke="#ef4444" stroke-width="1.5"/>
+                                    <text x="45" y="45" font-size="11" fill="#ef4444" font-style="italic">h</text>
+                                    <text x="68" y="61" font-size="11" fill="#ef4444" font-style="italic">r</text>
+                                </svg>
+                                <div class="fw-bold small">Right Circular Cone</div>
+                                <small class="text-muted d-block">V = &#x2153;&pi;r&sup2;h</small>
+                            </div>
+                        </div>
+                        <div class="col-12 col-md-4">
+                            <div class="border rounded p-2 h-100">
+                                <svg viewBox="0 0 110 85" class="w-75 mb-1" style="max-width: 110px;">
+                                    <polygon points="20,68 74,68 92,52 38,52" fill="none" stroke="#2563eb" stroke-width="1.8"/>
+                                    <line x1="56" y1="14" x2="20" y2="68" stroke="#2563eb" stroke-width="2"/>
+                                    <line x1="56" y1="14" x2="74" y2="68" stroke="#2563eb" stroke-width="2"/>
+                                    <line x1="56" y1="14" x2="92" y2="52" stroke="#2563eb" stroke-width="2"/>
+                                    <line x1="56" y1="14" x2="38" y2="52" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="3,2"/>
+                                    <line x1="56" y1="14" x2="56" y2="60" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="3,2"/>
+                                    <text x="59" y="42" font-size="11" fill="#ef4444" font-style="italic">h</text>
+                                    <text x="44" y="80" font-size="11" fill="#ef4444" font-style="italic">l</text>
+                                    <text x="86" y="66" font-size="11" fill="#ef4444" font-style="italic">w</text>
+                                </svg>
+                                <div class="fw-bold small">Rectangular Pyramid</div>
+                                <small class="text-muted d-block">V = &#x2153;lwh</small>
+                            </div>
                         </div>
                     </div>
-                    <div class="alert alert-secondary mt-4 py-2 small mb-0">
-                        <strong>Facts:</strong> The number of degrees of arc in a circle is 360. The number of radians of arc in a circle is 2π. The sum of the measures in degrees of the angles of a triangle is 180.
+                    <div class="alert alert-secondary mt-3 py-2 small mb-0">
+                        <strong>Reference Facts:</strong>
+                        The number of degrees of arc in a circle is 360.
+                        The number of radians of arc in a circle is 2&pi;.
+                        The sum of the measures in degrees of the angles of a triangle is 180.
                     </div>
                 </div>
                 <div class="modal-footer py-2">

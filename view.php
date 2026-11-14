@@ -286,4 +286,9 @@ if ($haspreview && ($canpreview || $canmanage)) {
 
 echo html_writer::end_div();
 
+echo html_writer::div(
+    s(get_string('disclaimer', 'mod_sat')),
+    'sat-disclaimer text-muted small text-center mt-5 pt-3 border-top'
+);
+
 echo $OUTPUT->footer();

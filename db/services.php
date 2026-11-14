@@ -46,4 +46,11 @@ $functions = [
         'type'        => 'write',
         'ajax'        => true,
     ],
+    'mod_sat_end_break' => [
+        'classname'   => 'mod_sat\external\attempt_api',
+        'methodname'  => 'end_break',
+        'description' => 'End scheduled inter-section break and begin the Math section.',
+        'type'        => 'write',
+        'ajax'        => true,
+    ],
 ];

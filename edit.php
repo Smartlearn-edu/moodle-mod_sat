@@ -258,6 +258,100 @@ if ($currentmod) {
     echo html_writer::end_div();
     echo html_writer::end_div();
 
+    // Module Blueprint Check Bar (Question Mix & SAT Domain Coverage).
+    $scoredcount = 0;
+    $sprcount = 0;
+    $questionids = [];
+    foreach ($slots as $s) {
+        if (!empty($s->is_scored)) {
+            $scoredcount++;
+        }
+        if (!empty($s->is_spr) || in_array($s->qtype ?? '', ['shortanswer', 'numerical'], true)) {
+            $sprcount++;
+        }
+        if (!empty($s->questionid)) {
+            $questionids[] = (int)$s->questionid;
+        }
+    }
+    $pretestcount = $count - $scoredcount;
+    $mcqcount = $count - $sprcount;
+    $sprpct = $count > 0 ? (int)round(($sprcount / $count) * 100) : 0;
+
+    $expecteddomains = ($currentmod->section === 'math')
+        ? [
+            \mod_sat\local\diagnostic_manager::DOMAIN_ALGEBRA,
+            \mod_sat\local\diagnostic_manager::DOMAIN_ADVANCED_MATH,
+            \mod_sat\local\diagnostic_manager::DOMAIN_PROBLEM_SOLVING,
+            \mod_sat\local\diagnostic_manager::DOMAIN_GEOMETRY_TRIG,
+        ]
+        : [
+            \mod_sat\local\diagnostic_manager::DOMAIN_CRAFT_STRUCTURE,
+            \mod_sat\local\diagnostic_manager::DOMAIN_INFO_IDEAS,
+            \mod_sat\local\diagnostic_manager::DOMAIN_STANDARD_ENGLISH,
+            \mod_sat\local\diagnostic_manager::DOMAIN_EXPRESSION_IDEAS,
+        ];
+    $domaincounts = array_fill_keys($expecteddomains, 0);
+    $untaggedcount = 0;
+
+    if (!empty($questionids)) {
+        $uniqueqids = array_values(array_unique($questionids));
+        [$qinsql, $qparams] = $DB->get_in_or_equal($uniqueqids, SQL_PARAMS_NAMED);
+        $tagsql = "SELECT ti.id, ti.itemid AS questionid, t.rawname
+                     FROM {tag_instance} ti
+                     JOIN {tag} t ON t.id = ti.tagid
+                    WHERE ti.component = 'core_question'
+                      AND ti.itemtype = 'question'
+                      AND ti.itemid $qinsql";
+        $tagrows = $DB->get_records_sql($tagsql, $qparams);
+        $qdomainmap = [];
+        foreach ($tagrows as $tr) {
+            if (str_starts_with($tr->rawname, 'sat_domain:') && !isset($qdomainmap[(int)$tr->questionid])) {
+                $qdomainmap[(int)$tr->questionid] = $tr->rawname;
+            }
+        }
+        foreach ($slots as $s) {
+            if (empty($s->questionid)) {
+                continue;
+            }
+            $dom = $qdomainmap[(int)$s->questionid] ?? '';
+            if ($dom !== '') {
+                $domaincounts[$dom] = ($domaincounts[$dom] ?? 0) + 1;
+            } else {
+                $untaggedcount++;
+            }
+        }
+    }
+
+    echo html_writer::start_div('card p-3 mb-3 bg-light border');
+    echo html_writer::start_div('d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2');
+    echo html_writer::tag('span', get_string('blueprint_summary', 'mod_sat'), ['class' => 'fw-bold small text-uppercase']);
+    echo html_writer::tag(
+        'span',
+        get_string('blueprint_mix', 'mod_sat') . ': '
+        . "Scored: <strong>$scoredcount</strong> &bull; "
+        . "Pretest: <strong>$pretestcount</strong> &bull; "
+        . "MCQ: <strong>$mcqcount</strong> &bull; "
+        . "SPR: <strong>$sprcount ($sprpct%)</strong>",
+        ['class' => 'small text-muted']
+    );
+    echo html_writer::end_div();
+    echo html_writer::start_div('d-flex flex-wrap align-items-center gap-2');
+    echo html_writer::tag('span', get_string('blueprint_domains', 'mod_sat') . ':', ['class' => 'small fw-semibold']);
+    foreach ($domaincounts as $domkey => $domcount) {
+        $domlabel = \mod_sat\local\diagnostic_manager::get_domain_label($domkey);
+        $badgeclass = ($domcount > 0) ? 'badge bg-success' : 'badge bg-white text-muted border';
+        echo html_writer::tag('span', s($domlabel . ': ' . $domcount), ['class' => $badgeclass]);
+    }
+    if ($untaggedcount > 0) {
+        echo html_writer::tag(
+            'span',
+            s(get_string('blueprint_untagged', 'mod_sat') . ': ' . $untaggedcount),
+            ['class' => 'badge bg-warning text-dark']
+        );
+    }
+    echo html_writer::end_div();
+    echo html_writer::end_div();
+
     if (empty($slots)) {
         echo $OUTPUT->notification(get_string('noslotsinmodule', 'mod_sat'), 'info');
     } else {

@@ -38,6 +38,9 @@ class attempt_manager {
     /** Attempt state: paused between modules in paced mode. */
     public const STATE_PAUSED = 'paused';
 
+    /** Module attempt state: scheduled break before starting Math section. */
+    public const STATE_BREAK = 'break';
+
     /** Attempt state: completed and final grade recorded. */
     public const STATE_FINISHED = 'finished';
 
@@ -414,6 +417,23 @@ class attempt_manager {
             return $modattempt;
         }
 
+        // Check for a scheduled inter-section break waiting to finish or resume.
+        $breakmod = $DB->get_record_select(
+            'sat_module_attempts',
+            'attemptid = :attemptid AND state = :breakstate',
+            ['attemptid' => $attempt->id, 'breakstate' => self::STATE_BREAK],
+            '*',
+            IGNORE_MULTIPLE
+        );
+
+        if ($breakmod) {
+            $now = time();
+            if ($now >= (int)$breakmod->timedeadline) {
+                return self::end_break((int)$attempt->id, (int)$breakmod->id);
+            }
+            return $breakmod;
+        }
+
         // Check for a paused module waiting to be resumed in Paced Mode.
         $pausedmod = $DB->get_record_select(
             'sat_module_attempts',
@@ -447,6 +467,72 @@ class attempt_manager {
         // Fallback to latest module attempt.
         $records = $DB->get_records('sat_module_attempts', ['attemptid' => $attempt->id], 'id DESC', '*', 0, 1);
         return $records ? reset($records) : null;
+    }
+
+    /**
+     * Ends a scheduled inter-section break and starts the Math module timer.
+     *
+     * @param int $attemptid SAT attempt ID
+     * @param int $modattemptid Optional module attempt ID
+     * @return stdClass Updated or active module attempt record
+     */
+    public static function end_break(int $attemptid, int $modattemptid = 0): stdClass {
+        global $DB;
+
+        $attempt = $DB->get_record('sat_attempts', ['id' => $attemptid], '*', MUST_EXIST);
+        $sat = $DB->get_record('sat', ['id' => $attempt->satid], '*', MUST_EXIST);
+
+        if ($modattemptid > 0) {
+            $modattempt = $DB->get_record(
+                'sat_module_attempts',
+                ['id' => $modattemptid, 'attemptid' => $attempt->id],
+                '*',
+                MUST_EXIST
+            );
+        } else {
+            $modattempt = $DB->get_record_select(
+                'sat_module_attempts',
+                'attemptid = :attemptid AND state = :breakstate',
+                ['attemptid' => $attempt->id, 'breakstate' => self::STATE_BREAK],
+                '*',
+                IGNORE_MULTIPLE
+            );
+            if (!$modattempt) {
+                $modattempt = $DB->get_record_select(
+                    'sat_module_attempts',
+                    'attemptid = :attemptid AND state = :inprogress',
+                    ['attemptid' => $attempt->id, 'inprogress' => self::STATE_INPROGRESS],
+                    '*',
+                    IGNORE_MULTIPLE
+                );
+            }
+            if (!$modattempt) {
+                $records = $DB->get_records('sat_module_attempts', ['attemptid' => $attempt->id], 'id DESC', '*', 0, 1);
+                if ($records) {
+                    $modattempt = reset($records);
+                }
+            }
+            if (!$modattempt) {
+                throw new \moodle_exception('invalidrecord', 'error', '', 'sat_module_attempts');
+            }
+        }
+
+        if ($modattempt->state === self::STATE_BREAK) {
+            $module = $DB->get_record('sat_modules', ['id' => $modattempt->moduleid], '*', MUST_EXIST);
+            $multiplier = self::get_time_multiplier((int)$sat->id, (int)$attempt->userid);
+            $timelimit = (int) round($module->timelimit * $multiplier);
+            $now = time();
+
+            $modattempt->state = self::STATE_INPROGRESS;
+            $modattempt->timestart = $now;
+            $modattempt->timedeadline = $now + $timelimit;
+            $DB->update_record('sat_module_attempts', $modattempt);
+
+            $attempt->timemodified = $now;
+            $DB->update_record('sat_attempts', $attempt);
+        }
+
+        return $modattempt;
     }
 
     /**
@@ -524,11 +610,19 @@ class attempt_manager {
 
         // Idempotency guard: prevent duplicate transitions when auto-submit and manual submit race.
         if ($modattempt->state === self::STATE_FINISHED) {
-            $existingaction = match ($attempt->state) {
-                self::STATE_FINISHED => 'finish',
-                self::STATE_PAUSED => 'pause',
-                default => 'continue',
-            };
+            $hasbreak = $DB->record_exists('sat_module_attempts', [
+                'attemptid' => $attempt->id,
+                'state' => self::STATE_BREAK,
+            ]);
+            if ($hasbreak) {
+                $existingaction = 'break';
+            } else {
+                $existingaction = match ($attempt->state) {
+                    self::STATE_FINISHED => 'finish',
+                    self::STATE_PAUSED => 'pause',
+                    default => 'continue',
+                };
+            }
             $transaction->allow_commit();
             return [$attempt, $existingaction];
         }
@@ -651,14 +745,32 @@ class attempt_manager {
                 $multiplier = self::get_time_multiplier((int)$sat->id, (int)$attempt->userid);
                 $timelimit = (int) round($nextmodule->timelimit * $multiplier);
 
+                $isbreaktransition = (
+                    $sat->exam_scope === 'full'
+                    && $sat->pacing_mode === 'continuous'
+                    && $module->section === 'rw'
+                    && $module->stage !== 'm1'
+                    && $nextsection === 'math'
+                    && $nextstage === 'm1'
+                    && (int)($sat->breakduration ?? 0) > 0
+                );
+
                 $nextmodattempt = new stdClass();
                 $nextmodattempt->attemptid = $attempt->id;
                 $nextmodattempt->moduleid = $nextmodule->id;
-                $nextmodattempt->state = ($sat->pacing_mode === 'paced') ? self::STATE_PAUSED : self::STATE_INPROGRESS;
                 $nextmodattempt->firstslot = $firstslotnum;
                 $nextmodattempt->lastslot = $lastslotnum;
                 $nextmodattempt->timestart = $now;
-                $nextmodattempt->timedeadline = $now + $timelimit;
+                if ($isbreaktransition) {
+                    $nextmodattempt->state = self::STATE_BREAK;
+                    $nextmodattempt->timedeadline = $now + (int)$sat->breakduration;
+                    $nextaction = 'break';
+                } else {
+                    $nextmodattempt->state = ($sat->pacing_mode === 'paced')
+                        ? self::STATE_PAUSED
+                        : self::STATE_INPROGRESS;
+                    $nextmodattempt->timedeadline = $now + $timelimit;
+                }
                 $nextmodattempt->timefinish = 0;
                 $nextmodattempt->rawscore = 0.0;
                 $nextmodattempt->maxscore = $nextmaxscore;

@@ -243,3 +243,78 @@
 .path-mod-sat #sat-simulator-app.sat-high-contrast mark.sat-hl {
     color: #0f172a !important;
 }
+
+/* Phase 2: Break screen, Check Your Work review overlay, Directions, & SPR guide */
+.path-mod-sat .sat-workspace-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 1045;
+    background-color: #f8fafc;
+}
+
+.path-mod-sat #sat-break-screen {
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+}
+
+.path-mod-sat .sat-review-tile {
+    width: 52px;
+    height: 52px;
+    border-radius: 8px;
+    border: 2px solid #cbd5e1;
+    background-color: #ffffff;
+    color: #1e293b;
+    font-weight: 700;
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform 0.12s ease, border-color 0.12s ease;
+}
+
+.path-mod-sat .sat-review-tile:hover {
+    border-color: #2563eb;
+    transform: translateY(-1px);
+}
+
+.path-mod-sat .sat-review-tile.answered {
+    background-color: #1e293b;
+    color: #ffffff;
+    border-color: #1e293b;
+}
+
+.path-mod-sat .sat-review-tile.current {
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.35);
+    border-color: #2563eb;
+}
+
+.path-mod-sat .sat-review-tile .sat-review-flag-icon {
+    position: absolute;
+    top: -6px;
+    right: -4px;
+    color: #eab308;
+    font-size: 13px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+
+.path-mod-sat .sat-spr-guide-card {
+    color: #1e293b;
+}
+
+.path-mod-sat #sat-simulator-app.sat-high-contrast .sat-spr-guide-card,
+.path-mod-sat #sat-simulator-app.sat-high-contrast .sat-spr-guide-details {
+    background-color: #111827 !important;
+    color: #ffffff !important;
+    border-color: #475569 !important;
+}
+
+.path-mod-sat #sat-simulator-app.sat-high-contrast .sat-spr-guide-card table,
+.path-mod-sat #sat-simulator-app.sat-high-contrast .sat-spr-guide-details table {
+    color: #ffffff !important;
+    background-color: #0f172a !important;
+}
+
+.path-mod-sat #sat-simulator-app.sat-high-contrast #sat-review-overlay {
+    background-color: #000000 !important;
+    color: #ffffff !important;
+}

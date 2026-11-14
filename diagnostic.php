@@ -62,6 +62,10 @@ if (!$canview) {
         ['class' => 'btn btn-secondary px-4']
     );
     echo html_writer::end_div();
+    echo html_writer::div(
+        s(get_string('disclaimer', 'mod_sat')),
+        'sat-disclaimer text-muted small text-center mt-4 pt-3 border-top'
+    );
     echo $OUTPUT->footer();
     exit;
 }
@@ -81,7 +85,7 @@ echo html_writer::start_div('d-flex justify-content-between align-items-center f
 echo html_writer::start_div();
 echo html_writer::tag(
     'span',
-    get_string('diagnostic_report', 'mod_sat'),
+    get_string('diagnostic_badge', 'mod_sat'),
     ['class' => 'badge bg-primary text-uppercase px-3 py-2 mb-2']
 );
 echo html_writer::tag('h2', $fullname, ['class' => 'fw-bold mb-1 text-white']);
@@ -177,5 +181,10 @@ echo html_writer::tag('button', '<i class="fa fa-print me-1"></i> Print Score Re
 echo html_writer::end_div();
 
 echo html_writer::end_div();
+
+echo html_writer::div(
+    s(get_string('disclaimer', 'mod_sat')),
+    'sat-disclaimer text-muted small text-center mt-4 pt-3 border-top'
+);
 
 echo $OUTPUT->footer();
