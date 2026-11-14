@@ -29,6 +29,11 @@ $cmid = required_param('cmid', PARAM_INT);
 $selectedmoduleid = optional_param('modid', 0, PARAM_INT);
 $action = optional_param('action', '', PARAM_ALPHA);
 $slotid = optional_param('slotid', 0, PARAM_INT);
+$bankcontextid = optional_param('bankcontextid', 0, PARAM_INT);
+$catid = optional_param('catid', 0, PARAM_INT);
+$recurse = optional_param('recurse', 1, PARAM_INT);
+$qsearch = trim(optional_param('qsearch', '', PARAM_TEXT));
+$qtypefilter = optional_param('qtypefilter', '', PARAM_ALPHA);
 
 $cm = get_coursemodule_from_id('sat', $cmid, 0, false, MUST_EXIST);
 $course = $DB->get_record('course', ['id' => $cm->course], '*', MUST_EXIST);
@@ -38,39 +43,93 @@ require_login($course, false, $cm);
 $context = context_module::instance($cm->id);
 require_capability('mod/sat:manage', $context);
 
+$buildediturl = static function (
+    int $modid,
+    array $extra = [],
+    string $anchor = ''
+) use (
+    $cmid,
+    $bankcontextid,
+    $catid,
+    $recurse,
+    $qsearch,
+    $qtypefilter
+): moodle_url {
+    $params = [
+        'cmid' => $cmid,
+        'modid' => $modid,
+    ];
+    if ($bankcontextid > 0) {
+        $params['bankcontextid'] = $bankcontextid;
+    }
+    if ($catid > 0) {
+        $params['catid'] = $catid;
+    }
+    if ((int)$recurse === 0) {
+        $params['recurse'] = 0;
+    }
+    if ($qsearch !== '') {
+        $params['qsearch'] = $qsearch;
+    }
+    if ($qtypefilter !== '') {
+        $params['qtypefilter'] = $qtypefilter;
+    }
+    $params = array_merge($params, $extra);
+    return new moodle_url('/mod/sat/edit.php', $params, $anchor);
+};
+
 // Process delete action.
 if ($action === 'delete' && $slotid && confirm_sesskey()) {
     \mod_sat\local\structure_manager::delete_slot($slotid);
-    redirect(new moodle_url('/mod/sat/edit.php', ['cmid' => $cmid, 'modid' => $selectedmoduleid]));
+    redirect($buildediturl($selectedmoduleid));
 }
 
 // Process move up / down actions.
 if (($action === 'moveup' || $action === 'movedown') && $slotid && confirm_sesskey()) {
     $dir = ($action === 'moveup') ? 'up' : 'down';
     \mod_sat\local\structure_manager::move_slot($slotid, $dir);
-    redirect(new moodle_url('/mod/sat/edit.php', ['cmid' => $cmid, 'modid' => $selectedmoduleid]));
+    redirect($buildediturl($selectedmoduleid));
 }
 
 // Process toggle scored action.
 if ($action === 'togglescored' && $slotid && confirm_sesskey()) {
     \mod_sat\local\structure_manager::toggle_slot_scored($slotid);
-    redirect(new moodle_url('/mod/sat/edit.php', ['cmid' => $cmid, 'modid' => $selectedmoduleid]));
+    redirect($buildediturl($selectedmoduleid));
+}
+
+// Process single-click quick add from Question Bank picker.
+if ($action === 'addsingle' && confirm_sesskey()) {
+    $qbankentryid = required_param('qentryid', PARAM_INT);
+    $targetmodid = required_param('targetmodid', PARAM_INT);
+    $isscored = optional_param('isscored', 1, PARAM_INT);
+
+    $qtypes = \mod_sat\local\structure_manager::get_qtypes_for_entries([$qbankentryid]);
+    $qtype = $qtypes[(int)$qbankentryid] ?? '';
+    $isspr = in_array($qtype, ['shortanswer', 'numerical'], true);
+
+    \mod_sat\local\structure_manager::add_fixed_slot(
+        $sat->id,
+        $targetmodid,
+        $context->id,
+        $qbankentryid,
+        1.0,
+        (bool)$isscored,
+        $isspr
+    );
+    redirect($buildediturl($targetmodid, [], 'sat-qbank-picker'));
 }
 
 // Process bulk add from Question Bank selector.
 if ($action === 'addbulk' && confirm_sesskey()) {
     $qentryids = optional_param_array('qentryids', [], PARAM_INT);
     $targetmodid = required_param('targetmodid', PARAM_INT);
-    $isscored = optional_param('isscored', 1, PARAM_INT);
+    $isscored = optional_param('isscored', 0, PARAM_INT);
 
     if (!empty($qentryids)) {
-        $bankquestions = \mod_sat\local\structure_manager::get_available_bank_questions($context->id);
+        $qtypes = \mod_sat\local\structure_manager::get_qtypes_for_entries($qentryids);
         foreach ($qentryids as $qentryid) {
-            $isspr = false;
-            if (isset($bankquestions[$qentryid])) {
-                $qtype = $bankquestions[$qentryid]->qtype;
-                $isspr = in_array($qtype, ['shortanswer', 'numerical'], true);
-            }
+            $qtype = $qtypes[(int)$qentryid] ?? '';
+            $isspr = in_array($qtype, ['shortanswer', 'numerical'], true);
             \mod_sat\local\structure_manager::add_fixed_slot(
                 $sat->id,
                 $targetmodid,
@@ -83,7 +142,7 @@ if ($action === 'addbulk' && confirm_sesskey()) {
         }
     }
 
-    redirect(new moodle_url('/mod/sat/edit.php', ['cmid' => $cmid, 'modid' => $targetmodid]));
+    redirect($buildediturl($targetmodid, [], 'sat-qbank-picker'));
 }
 
 // Process manual single question add action.
@@ -102,7 +161,7 @@ if ($action === 'add' && confirm_sesskey()) {
         (bool)$isscored,
         (bool)$isspr
     );
-    redirect(new moodle_url('/mod/sat/edit.php', ['cmid' => $cmid, 'modid' => $targetmodid]));
+    redirect($buildediturl($targetmodid));
 }
 
 $modules = \mod_sat\local\structure_manager::get_modules($sat->id);
@@ -121,6 +180,7 @@ $PAGE->set_url('/mod/sat/edit.php', ['cmid' => $cmid, 'modid' => $selectedmodule
 $PAGE->set_title(get_string('managequestions', 'mod_sat') . ': ' . format_string($sat->name));
 $PAGE->set_heading(format_string($course->fullname));
 $PAGE->set_context($context);
+$PAGE->requires->js_call_amd('mod_sat/question_picker', 'init');
 
 echo $OUTPUT->header();
 echo $OUTPUT->heading(get_string('managequestions', 'mod_sat') . ' — ' . format_string($sat->name));
@@ -133,7 +193,7 @@ foreach ($modules as $m) {
     $secstr = strtoupper($m->section);
     $label = "$secstr: $stagestr";
 
-    $link = new moodle_url('/mod/sat/edit.php', ['cmid' => $cmid, 'modid' => $m->id]);
+    $link = $buildediturl((int)$m->id);
     $btnclass = $isactive ? 'nav-link active' : 'nav-link';
     echo html_writer::tag('li', html_writer::link($link, $label, ['class' => $btnclass]), ['class' => 'nav-item']);
 }
@@ -146,17 +206,36 @@ if ($currentmod) {
     $count = count($slots);
     $targetcount = $currentmod->questioncount;
 
+    // Resolve accessible Question Banks and Categories for the Moodle Quiz-style picker.
+    $banks = \mod_sat\local\structure_manager::get_available_question_banks((int)$course->id, (int)$context->id);
+    if ($bankcontextid === 0 || !isset($banks[$bankcontextid])) {
+        $firstbank = reset($banks);
+        $bankcontextid = $firstbank ? (int)$firstbank->contextid : 0;
+    }
+    $currentbank = ($bankcontextid && isset($banks[$bankcontextid])) ? $banks[$bankcontextid] : null;
+    $categories = $bankcontextid ? \mod_sat\local\structure_manager::get_bank_categories($bankcontextid) : [];
+    if ($catid !== 0 && !isset($categories[$catid])) {
+        $catid = 0;
+    }
+
+    if ($currentbank && $currentbank->cmid > 0) {
+        $qbankurl = new moodle_url('/question/edit.php', ['cmid' => $currentbank->cmid]);
+    } else {
+        $qbankurl = new moodle_url('/question/edit.php', ['courseid' => $course->id]);
+    }
+
     echo html_writer::start_div('alert alert-info d-flex justify-content-between align-items-center mb-3');
     echo html_writer::tag('span', "Total Questions in this module: <strong>$count / $targetcount</strong>");
     echo html_writer::start_div('d-flex gap-2');
-    $qbankurl = new moodle_url('/question/edit.php', ['courseid' => $course->id]);
-    echo html_writer::link($qbankurl, 'Open Question Bank', ['class' => 'btn btn-sm btn-outline-primary', 'target' => '_blank']);
+    echo html_writer::link($qbankurl, get_string('openquestionbank', 'mod_sat'), [
+        'class' => 'btn btn-sm btn-outline-primary',
+        'target' => '_blank',
+    ]);
     $backurl = new moodle_url('/mod/sat/view.php', ['id' => $cmid]);
     echo html_writer::link($backurl, get_string('back'), ['class' => 'btn btn-sm btn-outline-dark']);
     echo html_writer::end_div();
     echo html_writer::end_div();
 
-    $existingentries = [];
     if (empty($slots)) {
         echo $OUTPUT->notification(get_string('noslotsinmodule', 'mod_sat'), 'info');
     } else {
@@ -174,34 +253,22 @@ if ($currentmod) {
         $slotcount = count($slotlist);
 
         foreach ($slotlist as $idx => $s) {
-            if (!empty($s->questionbankentryid)) {
-                $existingentries[(int)$s->questionbankentryid] = true;
-            }
-
-            $upurl = new moodle_url('/mod/sat/edit.php', [
-                'cmid' => $cmid,
-                'modid' => $currentmod->id,
+            $upurl = $buildediturl((int)$currentmod->id, [
                 'action' => 'moveup',
                 'slotid' => $s->id,
                 'sesskey' => sesskey(),
             ]);
-            $downurl = new moodle_url('/mod/sat/edit.php', [
-                'cmid' => $cmid,
-                'modid' => $currentmod->id,
+            $downurl = $buildediturl((int)$currentmod->id, [
                 'action' => 'movedown',
                 'slotid' => $s->id,
                 'sesskey' => sesskey(),
             ]);
-            $toggleurl = new moodle_url('/mod/sat/edit.php', [
-                'cmid' => $cmid,
-                'modid' => $currentmod->id,
+            $toggleurl = $buildediturl((int)$currentmod->id, [
                 'action' => 'togglescored',
                 'slotid' => $s->id,
                 'sesskey' => sesskey(),
             ]);
-            $deleteurl = new moodle_url('/mod/sat/edit.php', [
-                'cmid' => $cmid,
-                'modid' => $currentmod->id,
+            $deleteurl = $buildediturl((int)$currentmod->id, [
                 'action' => 'delete',
                 'slotid' => $s->id,
                 'sesskey' => sesskey(),
@@ -225,8 +292,9 @@ if ($currentmod) {
                 'class' => 'btn btn-sm btn-outline-info',
             ]);
             $actionbuttons[] = html_writer::link($deleteurl, get_string('delete'), [
-                'class' => 'btn btn-sm btn-outline-danger',
-                'onclick' => 'return confirm("' . get_string('confirmdeleteslot', 'mod_sat') . '");',
+                'class' => 'btn btn-sm btn-outline-danger sat-delete-slot',
+                'data-confirm-title' => get_string('delete'),
+                'data-confirm-message' => get_string('confirmdeleteslot', 'mod_sat'),
             ]);
 
             $qname = format_string($s->questionname ?? ('[' . get_string('missingquestion', 'mod_sat') . ']'));
@@ -256,82 +324,327 @@ if ($currentmod) {
         echo html_writer::table($table);
     }
 
-    // Visual Question Bank Picker (Bulk Add).
-    $bankquestions = \mod_sat\local\structure_manager::get_available_bank_questions($context->id);
+    // Moodle Quiz-style Question Bank & Category Picker.
+    echo html_writer::start_div('card p-3 mt-4 shadow-sm border', ['id' => 'sat-qbank-picker']);
+    echo html_writer::start_div('d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3');
+    echo html_writer::tag('h5', get_string('addfromquestionbank', 'mod_sat'), ['class' => 'card-title mb-0']);
+    if ($currentbank) {
+        echo html_writer::link($qbankurl, get_string('openquestionbank', 'mod_sat'), [
+            'class' => 'btn btn-sm btn-outline-secondary',
+            'target' => '_blank',
+        ]);
+    }
+    echo html_writer::end_div();
 
-    echo html_writer::start_div('card p-3 mt-4 shadow-sm border');
-    echo html_writer::tag('h5', 'Select Questions from Course Question Bank', ['class' => 'card-title mb-3']);
-
-    if (empty($bankquestions)) {
-        echo $OUTPUT->notification('No ready questions found in this course Question Bank yet.', 'warning');
+    if (empty($banks)) {
+        echo $OUTPUT->notification(get_string('noquestionsincategory', 'mod_sat'), 'warning');
     } else {
+        // Step 1 & 2: Bank, Category, Subcategories, QType, and Search filter form.
         echo html_writer::start_tag('form', [
-            'method' => 'post',
-            'action' => new moodle_url('/mod/sat/edit.php'),
+            'method' => 'get',
+            'action' => new moodle_url('/mod/sat/edit.php', [], 'sat-qbank-picker'),
+            'id' => 'sat-qbank-filter-form',
+            'class' => 'bg-light border rounded p-3 mb-3',
         ]);
         echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'cmid', 'value' => $cmid]);
-        echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'targetmodid', 'value' => $currentmod->id]);
-        echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'action', 'value' => 'addbulk']);
-        echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
+        echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'modid', 'value' => $currentmod->id]);
 
-        $picker = new html_table();
-        $picker->head = [
-            'Select',
-            'Category',
-            get_string('questionname', 'mod_sat'),
-            get_string('qtype', 'mod_sat'),
-            'Entry ID',
-        ];
-        $picker->attributes['class'] = 'table table-sm table-hover align-middle';
+        // Row 1: Question Bank & Category selectors.
+        echo html_writer::start_div('row g-3 mb-2');
 
-        foreach ($bankquestions as $bq) {
-            $alreadyadded = isset($existingentries[(int)$bq->qbankentryid]);
-            $checkbox = html_writer::empty_tag('input', [
-                'type' => 'checkbox',
-                'name' => 'qentryids[]',
-                'value' => $bq->qbankentryid,
-                'class' => 'form-check-input',
-            ]);
-            if ($alreadyadded) {
-                $checkbox .= ' <span class="badge bg-secondary ms-1">In module</span>';
-            }
-            $issprtype = in_array($bq->qtype, ['shortanswer', 'numerical'], true);
-            $typelabel = $issprtype ? ($bq->qtype . ' (Auto SPR)') : $bq->qtype;
-
-            $picker->data[] = [
-                $checkbox,
-                format_string($bq->categoryname),
-                format_string($bq->name),
-                $typelabel,
-                (int)$bq->qbankentryid,
-            ];
-        }
-
-        echo html_writer::div(html_writer::table($picker), '', ['style' => 'max-height: 360px; overflow-y: auto;']);
-
-        echo html_writer::start_div('d-flex justify-content-between align-items-center mt-3 pt-2 border-top');
-        echo html_writer::start_div('form-check');
-        echo html_writer::empty_tag('input', [
-            'type' => 'checkbox',
-            'name' => 'isscored',
-            'value' => '1',
-            'checked' => 'checked',
-            'id' => 'check_bulk_scored',
-            'class' => 'form-check-input',
+        echo html_writer::start_div('col-md-6');
+        echo html_writer::tag('label', get_string('questionbank', 'mod_sat'), [
+            'for' => 'sat-select-bank',
+            'class' => 'form-label fw-semibold mb-1',
         ]);
-        echo html_writer::tag('label', 'Mark selected slots as Scored (uncheck for Pretest)', [
-            'for' => 'check_bulk_scored',
+        echo html_writer::start_tag('select', [
+            'name' => 'bankcontextid',
+            'id' => 'sat-select-bank',
+            'class' => 'form-select',
+        ]);
+        foreach ($banks as $bank) {
+            $attrs = ['value' => (int)$bank->contextid];
+            if ((int)$bank->contextid === $bankcontextid) {
+                $attrs['selected'] = 'selected';
+            }
+            $banklabel = $bank->name . ' (' . (int)$bank->questioncount . ')';
+            echo html_writer::tag('option', s($banklabel), $attrs);
+        }
+        echo html_writer::end_tag('select');
+        echo html_writer::end_div();
+
+        echo html_writer::start_div('col-md-6');
+        echo html_writer::tag('label', get_string('category', 'mod_sat'), [
+            'for' => 'sat-select-category',
+            'class' => 'form-label fw-semibold mb-1',
+        ]);
+        echo html_writer::start_tag('select', [
+            'name' => 'catid',
+            'id' => 'sat-select-category',
+            'class' => 'form-select',
+        ]);
+        $allcatattrs = ['value' => 0];
+        if ($catid === 0) {
+            $allcatattrs['selected'] = 'selected';
+        }
+        $totalinbank = $currentbank ? (int)$currentbank->questioncount : 0;
+        echo html_writer::tag('option', s(get_string('allcategoriesinbank', 'mod_sat', $totalinbank)), $allcatattrs);
+        foreach ($categories as $cat) {
+            $catattrs = ['value' => (int)$cat->id];
+            if ((int)$cat->id === $catid) {
+                $catattrs['selected'] = 'selected';
+            }
+            echo html_writer::tag('option', s($cat->label), $catattrs);
+        }
+        echo html_writer::end_tag('select');
+        echo html_writer::end_div();
+
+        echo html_writer::end_div(); // End Row 1.
+
+        // Row 2: Subcategory toggle, QType filter, Search box.
+        echo html_writer::start_div('row g-3 align-items-center');
+
+        echo html_writer::start_div('col-md-4');
+        echo html_writer::start_div('form-check');
+        echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'recurse', 'value' => '0']);
+        $recurseattrs = [
+            'type' => 'checkbox',
+            'name' => 'recurse',
+            'value' => '1',
+            'id' => 'sat-check-recurse',
+            'class' => 'form-check-input',
+        ];
+        if ($recurse) {
+            $recurseattrs['checked'] = 'checked';
+        }
+        echo html_writer::empty_tag('input', $recurseattrs);
+        echo html_writer::tag('label', get_string('includesubcategories', 'mod_sat'), [
+            'for' => 'sat-check-recurse',
             'class' => 'form-check-label',
         ]);
         echo html_writer::end_div();
+        echo html_writer::end_div();
 
+        echo html_writer::start_div('col-md-4');
+        echo html_writer::start_tag('select', [
+            'name' => 'qtypefilter',
+            'id' => 'sat-select-qtype',
+            'class' => 'form-select form-select-sm',
+            'aria-label' => get_string('qtype', 'mod_sat'),
+        ]);
+        $qtypeoptions = [
+            '' => get_string('allqtypes', 'mod_sat'),
+            'mcq' => get_string('qtype_mcq', 'mod_sat'),
+            'spr' => get_string('qtype_spr', 'mod_sat'),
+        ];
+        foreach ($qtypeoptions as $optval => $optlabel) {
+            $optattrs = ['value' => $optval];
+            if ($qtypefilter === $optval) {
+                $optattrs['selected'] = 'selected';
+            }
+            echo html_writer::tag('option', s($optlabel), $optattrs);
+        }
+        echo html_writer::end_tag('select');
+        echo html_writer::end_div();
+
+        echo html_writer::start_div('col-md-4');
+        echo html_writer::start_div('input-group input-group-sm');
         echo html_writer::empty_tag('input', [
+            'type' => 'text',
+            'name' => 'qsearch',
+            'value' => $qsearch,
+            'class' => 'form-control',
+            'placeholder' => get_string('searchquestions', 'mod_sat'),
+            'aria-label' => get_string('searchquestions', 'mod_sat'),
+        ]);
+        echo html_writer::tag('button', get_string('filterquestions', 'mod_sat'), [
             'type' => 'submit',
-            'value' => 'Add Selected Questions to Module',
-            'class' => 'btn btn-primary',
+            'class' => 'btn btn-outline-secondary',
         ]);
         echo html_writer::end_div();
+        echo html_writer::end_div();
+
+        echo html_writer::end_div(); // End Row 2.
         echo html_writer::end_tag('form');
+
+        // Load questions for the selected Bank + Category + Filters.
+        $bankquestions = \mod_sat\local\structure_manager::get_questions_for_category(
+            $bankcontextid,
+            $catid,
+            (bool)$recurse,
+            $qsearch,
+            $qtypefilter
+        );
+        $usedentries = \mod_sat\local\structure_manager::get_exam_used_entries((int)$sat->id);
+
+        if (empty($bankquestions)) {
+            echo $OUTPUT->notification(get_string('noquestionsincategory', 'mod_sat'), 'info');
+        } else {
+            echo html_writer::start_tag('form', [
+                'method' => 'post',
+                'action' => new moodle_url('/mod/sat/edit.php', [], 'sat-qbank-picker'),
+                'id' => 'sat-qbank-bulk-form',
+            ]);
+            echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'cmid', 'value' => $cmid]);
+            echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'targetmodid', 'value' => $currentmod->id]);
+            echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'action', 'value' => 'addbulk']);
+            echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
+            echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'bankcontextid', 'value' => $bankcontextid]);
+            echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'catid', 'value' => $catid]);
+            echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'recurse', 'value' => $recurse]);
+            echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'qsearch', 'value' => $qsearch]);
+            echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'qtypefilter', 'value' => $qtypefilter]);
+
+            // Selection toolbar above table.
+            echo html_writer::start_div('d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2');
+            echo html_writer::start_div('d-flex align-items-center gap-2');
+            echo html_writer::tag('span', get_string('questionsfound', 'mod_sat', count($bankquestions)), [
+                'class' => 'badge bg-light text-dark border',
+            ]);
+            $selectedbadge = get_string('selectedcount', 'mod_sat', '<span id="sat-selected-count">0</span>');
+            echo html_writer::tag('span', $selectedbadge, ['class' => 'badge bg-primary']);
+            echo html_writer::end_div();
+
+            echo html_writer::start_div('d-flex gap-2');
+            echo html_writer::tag('button', get_string('selectallunused', 'mod_sat'), [
+                'type' => 'button',
+                'id' => 'sat-btn-select-unused',
+                'class' => 'btn btn-sm btn-outline-secondary',
+            ]);
+            echo html_writer::tag('button', get_string('deselectall', 'mod_sat'), [
+                'type' => 'button',
+                'id' => 'sat-btn-deselect-all',
+                'class' => 'btn btn-sm btn-outline-secondary',
+            ]);
+            echo html_writer::end_div();
+            echo html_writer::end_div();
+
+            // Questions table.
+            $picker = new html_table();
+            $mastercheck = html_writer::empty_tag('input', [
+                'type' => 'checkbox',
+                'id' => 'sat-check-all',
+                'class' => 'form-check-input',
+                'title' => get_string('selectall', 'mod_sat'),
+                'aria-label' => get_string('selectall', 'mod_sat'),
+            ]);
+            $picker->head = [
+                $mastercheck,
+                '',
+                get_string('questionname', 'mod_sat'),
+                get_string('category', 'mod_sat'),
+                get_string('qtype', 'mod_sat'),
+                get_string('state', 'mod_sat'),
+            ];
+            $picker->attributes['class'] = 'table table-sm table-hover align-middle mb-0';
+
+            foreach ($bankquestions as $bq) {
+                $entryid = (int)$bq->qbankentryid;
+                $usages = $usedentries[$entryid] ?? [];
+                $incurrentslots = [];
+                $othermodlabels = [];
+
+                foreach ($usages as $u) {
+                    if ($u->moduleid === (int)$currentmod->id) {
+                        $incurrentslots[] = $u->slot;
+                    } else {
+                        $modlabel = strtoupper($u->section) . ' ' . get_string('stage_' . $u->stage, 'mod_sat');
+                        $othermodlabels[$u->moduleid] = $modlabel;
+                    }
+                }
+
+                $checkbox = html_writer::empty_tag('input', [
+                    'type' => 'checkbox',
+                    'name' => 'qentryids[]',
+                    'value' => $entryid,
+                    'class' => 'form-check-input sat-qentry-checkbox',
+                    'data-in-module' => !empty($incurrentslots) ? '1' : '0',
+                    'aria-label' => format_string($bq->name),
+                ]);
+
+                $singleurl = $buildediturl((int)$currentmod->id, [
+                    'targetmodid' => $currentmod->id,
+                    'action' => 'addsingle',
+                    'qentryid' => $entryid,
+                    'sesskey' => sesskey(),
+                ], 'sat-qbank-picker');
+                $quickadd = html_writer::link($singleurl, '+', [
+                    'class' => 'btn btn-sm btn-outline-primary fw-bold px-2 py-0',
+                    'title' => get_string('addtomodule', 'mod_sat'),
+                    'aria-label' => get_string('addtomodule', 'mod_sat') . ': ' . format_string($bq->name),
+                ]);
+
+                $qnamehtml = html_writer::tag('div', format_string($bq->name), ['class' => 'fw-semibold']);
+                [$stimulus, $prompt] = \mod_sat\local\structure_manager::split_stimulus((string)$bq->questiontext);
+                $snippet = shorten_text(trim(strip_tags($prompt ?: $stimulus)), 90);
+                if ($snippet !== '') {
+                    $qnamehtml .= html_writer::tag('small', s($snippet), ['class' => 'text-muted d-block']);
+                }
+                if ($stimulus !== '') {
+                    $qnamehtml .= html_writer::tag('span', 'Split Stimulus', ['class' => 'badge bg-info text-dark mt-1']);
+                }
+
+                $issprtype = in_array($bq->qtype, ['shortanswer', 'numerical'], true);
+                $typelabel = $issprtype
+                    ? '<span class="badge bg-warning text-dark">SPR (' . s($bq->qtype) . ')</span>'
+                    : '<span class="badge bg-light text-dark border">' . s($bq->qtype) . '</span>';
+
+                $statushtml = html_writer::tag('span', '#' . $entryid, ['class' => 'text-muted small d-block']);
+                if (!empty($incurrentslots)) {
+                    $statushtml .= html_writer::tag(
+                        'span',
+                        get_string('inthismodule', 'mod_sat', implode(', #', $incurrentslots)),
+                        ['class' => 'badge bg-success me-1']
+                    );
+                }
+                foreach ($othermodlabels as $otherlabel) {
+                    $statushtml .= html_writer::tag(
+                        'span',
+                        get_string('inothermodule', 'mod_sat', $otherlabel),
+                        ['class' => 'badge bg-secondary me-1']
+                    );
+                }
+
+                $picker->data[] = [
+                    $checkbox,
+                    $quickadd,
+                    $qnamehtml,
+                    html_writer::tag('small', s((string)$bq->categorypath), ['class' => 'text-secondary']),
+                    $typelabel,
+                    $statushtml,
+                ];
+            }
+
+            echo html_writer::div(html_writer::table($picker), 'border rounded', [
+                'style' => 'max-height: 440px; overflow-y: auto;',
+            ]);
+
+            echo html_writer::start_div('d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3 pt-2 border-top');
+            echo html_writer::start_div('form-check');
+            echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'isscored', 'value' => '0']);
+            echo html_writer::empty_tag('input', [
+                'type' => 'checkbox',
+                'name' => 'isscored',
+                'value' => '1',
+                'checked' => 'checked',
+                'id' => 'check_bulk_scored',
+                'class' => 'form-check-input',
+            ]);
+            echo html_writer::tag('label', get_string('markselectedscored', 'mod_sat'), [
+                'for' => 'check_bulk_scored',
+                'class' => 'form-check-label',
+            ]);
+            echo html_writer::end_div();
+
+            echo html_writer::empty_tag('input', [
+                'type' => 'submit',
+                'id' => 'sat-btn-add-selected',
+                'value' => get_string('addselectedtomodule', 'mod_sat'),
+                'class' => 'btn btn-primary',
+            ]);
+            echo html_writer::end_div();
+            echo html_writer::end_tag('form');
+        }
     }
     echo html_writer::end_div();
 
@@ -350,6 +663,9 @@ if ($currentmod) {
     echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'targetmodid', 'value' => $currentmod->id]);
     echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'action', 'value' => 'add']);
     echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
+    echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'bankcontextid', 'value' => $bankcontextid]);
+    echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'catid', 'value' => $catid]);
+    echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'recurse', 'value' => $recurse]);
 
     echo html_writer::start_div('col-auto');
     echo html_writer::tag('label', get_string('qbankentryid', 'mod_sat'), ['class' => 'form-label me-2']);

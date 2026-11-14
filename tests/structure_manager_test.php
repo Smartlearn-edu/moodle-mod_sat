@@ -18,6 +18,7 @@ namespace mod_sat;
 
 use advanced_testcase;
 use mod_sat\local\structure_manager;
+use stdClass;
 
 /**
  * Unit tests for SAT structure manager.
@@ -50,5 +51,57 @@ final class structure_manager_test extends advanced_testcase {
         [$stimulus, $prompt] = structure_manager::split_stimulus($html3);
         $this->assertEmpty($stimulus);
         $this->assertEquals($html3, $prompt);
+    }
+
+    /**
+     * Test formatting hierarchical question categories and resolving descendant IDs.
+     */
+    public function test_format_category_tree_and_descendants(): void {
+        $mkcat = static function (int $id, string $name, int $parent, int $sortorder, int $qcount): stdClass {
+            return (object)[
+                'id' => $id,
+                'name' => $name,
+                'parent' => $parent,
+                'contextid' => 100,
+                'sortorder' => $sortorder,
+                'questioncount' => $qcount,
+            ];
+        };
+
+        $records = [
+            1 => $mkcat(1, 'top', 0, 0, 0),
+            2 => $mkcat(2, 'Reading & Writing', 1, 1, 2),
+            3 => $mkcat(3, 'Module 1', 2, 1, 5),
+            4 => $mkcat(4, '1', 3, 1, 22),
+            5 => $mkcat(5, 'Module 2', 2, 2, 10),
+        ];
+
+        $tree = structure_manager::format_category_tree($records);
+
+        // Top category must be excluded and nodes ordered pre-order.
+        $this->assertArrayNotHasKey(1, $tree);
+        $this->assertSame([2, 3, 4, 5], array_keys($tree));
+
+        // Verify depths, indentation, full breadcrumb path, and rolled-up counts.
+        $this->assertSame(0, $tree[2]->depth);
+        $this->assertSame(1, $tree[3]->depth);
+        $this->assertSame(2, $tree[4]->depth);
+        $this->assertSame(1, $tree[5]->depth);
+
+        $this->assertSame('Reading & Writing', $tree[2]->indentedname);
+        $this->assertSame('— Module 1', $tree[3]->indentedname);
+        $this->assertSame('— — 1', $tree[4]->indentedname);
+        $this->assertSame('Reading & Writing / Module 1 / 1', $tree[4]->pathname);
+
+        $this->assertSame(22, $tree[4]->totalquestioncount);
+        $this->assertSame(27, $tree[3]->totalquestioncount);
+        $this->assertSame(39, $tree[2]->totalquestioncount);
+        $this->assertSame('— Module 1 (5 / 27 total)', $tree[3]->label);
+        $this->assertSame('— — 1 (22)', $tree[4]->label);
+
+        // Verify descendant resolution.
+        $this->assertSame([3, 4], structure_manager::get_descendant_category_ids($tree, 3));
+        $this->assertSame([2, 3, 5, 4], structure_manager::get_descendant_category_ids($tree, 2));
+        $this->assertSame([], structure_manager::get_descendant_category_ids($tree, 999));
     }
 }
