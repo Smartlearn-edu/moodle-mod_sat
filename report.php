@@ -53,7 +53,8 @@ echo html_writer::end_div();
 echo html_writer::end_div();
 
 // Attempts list.
-$sql = "SELECT a.*, u.firstname, u.lastname, u.email
+$sql = "SELECT a.*, u.firstname, u.lastname, u.firstnamephonetic, u.lastnamephonetic,
+               u.middlename, u.alternatename, u.email
           FROM {sat_attempts} a
           JOIN {user} u ON u.id = a.userid
          WHERE a.satid = :satid
